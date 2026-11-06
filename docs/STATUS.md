@@ -1,3 +1,21 @@
+## Round 7: the two rows are settable, Auto uses ARMSX2's table (2026-11-06)
+
+- **Cause of the phone error:** `model::platform_accepts` only allowed the CoreGS 2.0 row sets for GS table rows on
+  Android, so the Blending accuracy and Readbacks rows were visible but every change returned "'<id>' is not a setting
+  on this platform". The rows were added to the accepted set (both Blending values, all five Readbacks values); the
+  Windows path is unchanged.
+- **Ini proof:** after changing them on the emulator and pressing Play, `armsx2-gs.ini` carried
+  `accurate_blending_unit = 0` (Minimum) and `HWDownloadMode = 3` (Unsynchronized); screenshots:
+  `build/evidence/r7/03-changed.png` and `06-api-auto.png`.
+- **Auto API:** with Auto, the frontend now probes the device's GL identity with a 1x1 pbuffer and calls
+  `GSUtil::AndroidAutoPrefersVulkan`, so ARMSX2's table decides. The emulator logged
+  `API auto: Android Emulator OpenGL ES Translator (Google SwiftShader) -> OpenGL ES (no rule steers this device to
+  Vulkan)` and `armsx2-gs.ini` carried `Renderer = -1`. The new `gt4gs_auto_test` fed the six strings (Adreno 740,
+  Mali-G78, Mali-G57, PowerVR, Xclipse, llvmpipe) through the same function: 6/6, exit 0.
+- **Merge:** `upstream/task/180-android-emulator` is still at `224f5460`, so nothing was merged.
+- **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionCode **103001505**, 225,055,369 bytes, sha256
+  `3ee37a770208a8db7269a2334f93c87b0873e4601d11fb8f8372cd004c35c9d4`.
+
 ## Round 6: the two GSdx rows, Spec II on both renderers, the GPU rules (2026-11-06)
 
 - **Merge:** `upstream/task/180-android-emulator` at `224f5460` (TASK-186 correction: Blending accuracy and Readbacks
