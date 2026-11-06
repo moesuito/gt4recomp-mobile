@@ -331,9 +331,9 @@ GS_RENDERER_VULKAN = 14
 GS_BLENDING_HIGH = 3
 GS_DEINTERLACE_AUTOMATIC = 0
 # TASK-037: GT4_GS_READBACK, the PCSX2 hardware download mode (HWDownloadMode, GSHardwareDownloadMode in PCSX2's
-# Config.h): accurate = Enabled (0, the default: the reply waits for the GS thread and the GPU). TASK-091: the table row
-# is now performance_mode (Performance Mode); no-readbacks = NoReadbacks (2). Unsynchronized (3) left the table.
-GS_READBACK_MODES = {'accurate': 0, 'no-readbacks': 2}
+# Config.h): accurate = Enabled (0, the default: the reply waits for the GS thread and the GPU). TASK-186: the row is
+# hw_download_mode (Readbacks) again, with the five values of the row before TASK-091; the shortcut accepts them all.
+GS_READBACK_MODES = {'accurate': 0, 'enabled-force-full': 1, 'no-readbacks': 2, 'unsynchronized': 3, 'disabled': 4}
 GS_DEFAULT_READBACK = 'accurate'
 # The shader/pipeline cache and the gt4-gs data folder persist between sessions and candidates (same PCSX2 version);
 # before slice194 gt4-gs.exe ignored them and used the PCSX2 user folder (Documents\PCSX2).
@@ -428,7 +428,7 @@ def gs_settings_from_environment(environment, rows):
     """The checked GS settings of a pcsx2 run, from the table (docs/GS-SETTINGS.md).
 
     GT4_GS_SETTINGS (JSON from play_performance.py --gs-setting ID=VALUE) holds the user settings. The shortcuts
-    GT4_GS_SCALE (upscale, 1 to 12, default 3), GT4_GS_ASPECT (aspect) and GT4_GS_READBACK (performance_mode, default accurate)
+    GT4_GS_SCALE (upscale, 1 to 12, default 3), GT4_GS_ASPECT (aspect) and GT4_GS_READBACK (hw_download_mode, default accurate)
     set the same rows; a shortcut and a JSON setting for the same row conflict.
     """
     settings = {}
@@ -438,8 +438,8 @@ def gs_settings_from_environment(environment, rows):
     shortcuts = (('GT4_GS_SCALE', 'upscale', 'GT4_GS_SCALE must be an integer from 1 to 12'),
                  ('GT4_GS_ASPECT', 'aspect', 'GT4_GS_ASPECT must be one of ' + ', '.join(
                      gs_settings.offered_choices(index['aspect']))),
-                 ('GT4_GS_READBACK', 'performance_mode', 'GT4_GS_READBACK must be one of ' + ', '.join(
-                     gs_settings.offered_choices(index['performance_mode']))))
+                 ('GT4_GS_READBACK', 'hw_download_mode', 'GT4_GS_READBACK must be one of ' + ', '.join(
+                     gs_settings.offered_choices(index['hw_download_mode']))))
     for variable, identifier, message in shortcuts:
         if variable not in environment:
             continue
@@ -551,7 +551,7 @@ def gs_stream_environment(environment, runtime_evidence, binary_workspace, perfo
                                'source': package.get('source')}
         extra['gs_readback_mode'] = environment.get('GT4_GS_READBACK', GS_DEFAULT_READBACK)
         if extra['gs_readback_mode'] not in GS_READBACK_MODES:
-            raise ValueError('GT4_GS_READBACK must be accurate or no-readbacks')
+            raise ValueError('GT4_GS_READBACK must be one of ' + ', '.join(GS_READBACK_MODES))
     elif renderer == 'pcsx2':
         for name in ('GT4_GS_SCALE', 'GT4_GS_ASPECT', GS_SETTINGS_ENV, 'GT4_GS_READBACK', 'GT4_GS_EAGER_ACQUIRE'):
             if name in environment:

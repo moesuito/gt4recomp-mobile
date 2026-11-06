@@ -146,10 +146,13 @@ fn settings_8_to_9(document: &mut Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Schema 10 (TASK-180 test5, owner 2026-11-05): Performance Mode is replaced by independent effect toggles, each on by
-/// default (the effect is drawn as the original game). A stored `[gs] performance_mode = "no-readbacks"` is the player's
-/// old choice to turn the bundle on: it turns every effect toggle off, which is what it did, and the key goes. A file
-/// without it means every effect on, which is the toggles' default, so nothing is written for it. The rest is untouched.
+/// Schema 10 (TASK-180 test5, owner 2026-11-05; corrected by TASK-186, owner 2026-11-06): Performance Mode is replaced by
+/// independent effect toggles, each on by default (the effect is drawn as the original game). A stored
+/// `[gs] performance_mode = "no-readbacks"` is the player's old choice to turn the bundle on: it turns every effect toggle
+/// off, which is what it did, and the key goes. TASK-186 adds the preset's other setting, Minimum blending, as its own row;
+/// the old bundle's fast download mode is not written any more (the flares are hidden on the game side, and Readbacks is a
+/// player row, default Accurate). A file without Performance Mode means every effect on, which is the toggles' default, so
+/// nothing is written for it. The rest is untouched.
 fn settings_9_to_10(document: &mut Value) -> Result<(), String> {
     let table = document.as_object_mut().ok_or("settings.toml: the document is not a table")?;
     if let Some(gs) = table.get_mut("gs").and_then(Value::as_object_mut) {
@@ -157,6 +160,7 @@ fn settings_9_to_10(document: &mut Value) -> Result<(), String> {
         if performance {
             gs.insert("effect_flares".to_string(), Value::from("false"));
             gs.insert("effect_road_sheen".to_string(), Value::from("false"));
+            gs.insert("blending".to_string(), Value::from("minimum"));
         }
         gs.remove("performance_mode");
     }
@@ -604,7 +608,9 @@ mod tests {
         assert_eq!(on["schema_version"], json!(10));
         assert_eq!(on["gs"]["effect_flares"], json!("false"));
         assert_eq!(on["gs"]["effect_road_sheen"], json!("false"));
+        assert_eq!(on["gs"]["blending"], json!("minimum"), "TASK-186: the preset's blending is a row now");
         assert!(on["gs"].get("performance_mode").is_none());
+        assert!(on["gs"].get("hw_download_mode").is_none(), "Readbacks stay at the Accurate default");
         assert_eq!(on["gs"]["fxaa"], json!("true"));
 
         let mut off = json!({"schema_version": 9, "gs": {"performance_mode": "accurate"}});

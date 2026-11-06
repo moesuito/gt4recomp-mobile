@@ -1,0 +1,52 @@
+{
+  "donor_revision": "1b4808793a12c45125262fd2d5f50a9ec9f7c020",
+  "donor_sha256": {
+    "system.cpp": "f30c8dd90c40e930635375ae2a3091f052655d797744de4348a5c7261a710bb2",
+    "vu_micro.cpp": "5fc349d96364f72818da96cd2376637421d3d4d9150547c22034863c15d22a1d",
+    "vif.cpp": "6fc9efc739daec951172bc7f97f64b05802145314bc17b049c0c3219be654e18",
+    "iop/sif.cpp": "182a24218d719a669b3742867f9901b49d2e1043393f2211e93363dc0180dacc"
+  },
+  "source_sha256": {
+    "system.cpp": "6d77b460a23664a97e221128988635a0339ea6f3c2515cb6ec4a7a9a811cd48e",
+    "vu_micro.cpp": "4a594a6c0887c5faa7400fa02590abc890527f00bc8da733399e945e0272bdbe",
+    "vif.cpp": "132fab223b1e7906a6fd2df209fa2210c6d231570cbf57a35c3c533f8147bd16",
+    "gif.cpp": "a7a8e34e87e04fe1ad58c03f7478b8b06e1c89e5f41baf87b94c24a53d7178c9",
+    "memory.cpp": "9b592e03ef5a7837da5259d08fbc4d5ac8c90f77ca04f86b046c951c9d0f3245",
+    "hw.cpp": "8077c514e0209df7a0f2aa4b7354f99b9907030a22e08ba7ec36a64a770db7fb",
+    "dmac.cpp": "4be385e95c138d3cf9d999c57acdef27fc2d60968abb6d63b28ccfa89b871d3e",
+    "sif.cpp": "69403cd7e1874596d3548a789fd910749f027d6a01f84dbae42acbc30acf3d18"
+  },
+  "receipt_sha256": "7b3e2d4f0d4c570f0aeb4d30949f40a58aed5612e3d452d7ea47868a084e5dde",
+  "inputs": {
+    "PORT": {
+      "gpu.cpp": "3dae945726eab5cbf67dd30e1d0aee0ac921bb72f93a94fbd4340b607c4dce03",
+      "gpu.hpp": "28e50f7b1af97a9bb4ef42501048699d329ac7303ba98226baab87679f31c71f",
+      "gs.cpp": "12a989e6739684e90c2eb4b9b09851c016052694bf1f0c62dfa40bb0f4e5a6e0",
+      "main.cpp": "b89939f78987096eabb7fa3934734036619bff57b2812b81511aefbeb149b81d"
+    },
+    "SHADERS": {
+      "copy_read.spv": "b7ebe576bb96d554d225c11ce08a84f3b059cadebb71249bd29cd6b07c2dd1d6",
+      "copy_write.spv": "00a9f2b3bb3565d5a715a7ae4c78f839703dba1583c138428e4c70931e6cb23c",
+      "decode.spv": "df24d5e26904964d2dc1782aba006b125d5b1d4b54c735b0bdda7c03d0c38856",
+      "display.spv": "d575ad4e572c7cc47ddb93d0f6980072d972f8048dfb08d544f0e4ec300ff6e2",
+      "load_clut.spv": "a24f033fcf886084a3cf36c3c024b86893343761e6fa969b7e6366ba4f91cec9",
+      "raster.spv": "1d81e698dabc4102558e4df7b8f41d440c995d0a4f2c5286a2a974b8e4677f20",
+      "resolve.spv": "4e68027a902068135e8aef939363c72bb936f0d1bdba51090cd5c44f13be55d3",
+      "snapshot.spv": "bfcd7fd98d4999670f82de4cb824079bb021639a6d80dd08e82e2b04d3d0ffe7",
+      "upload.spv": "4e0ef1e4aaf00ad6c63e068b33886b56e4cb310df17904b0037e951c2070a72c"
+    }
+  },
+  "vu_scope_profile": "unit_split_run_fast_only",
+  "vu1_aot_profile": "overlay-v1",
+  "vu1_aot_overlay_sha256": "171b07c36fbe54be2579a84f579e06e4796b93648ca9f1d13b429d8abad0cd32",
+  "vu0_aot_profile": "overlay-v1",
+  "vu0_aot_overlay_sha256": "9e5fee2b08ad87bbeeba08adb426ee927f499df20fce9b44134ae87733bad25b",
+  "mtvu_runtime_profile": "task084-frame-cost-v1",
+  "gs_stream_profile": "task035-seam-v1",
+  "gs_stream_sources": [
+    "gif.cpp",
+    "hw.cpp"
+  ],
+  "spec2_iop_profile": "dnas310-reboot-v1",
+  "spec2_iop_overlay_sha256": "275b81413f1a31c0668d31496459bc0cf9d0a6d9719a5fe5c8f4c94883719c8e"
+}

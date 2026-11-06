@@ -52,6 +52,14 @@ endforeach()
 if(NOT GT4_TARGET STREQUAL "v200" AND NOT GT4_TARGET STREQUAL "spec2")
     message(FATAL_ERROR "android/native builds the v2.00 (GT4_TARGET=v200) and Spec II (GT4_TARGET=spec2) game libraries")
 endif()
+# TASK-100 S3, wired for Android by TASK-180b: GT4_TARGET_SPEC2 selects the Spec II row of native/game_target.hpp (the
+# guest addresses of every host hook). native/CMakeLists.txt has set it since S3; this build did not, so libgt4spec2.so
+# carried the v2.00 addresses. The widescreen/480p/aspect hooks then read a nonexistent game-data object (the pointer
+# logged 0xFFB30018 instead of the PC's 0x009BD690) and the Spec II display-request state was never observed. Any target
+# that is neither v200 nor spec2 fails above, so the definition can only be one of the two.
+if(GT4_TARGET STREQUAL "spec2")
+    add_compile_definitions(GT4_TARGET_SPEC2)
+endif()
 set(DONOR "${GT4_ASSETS_ROOT}/private/references/ps2-web-recomp")
 set(PORT "${GT4_PORT_DIR}")
 
@@ -281,6 +289,20 @@ list(APPEND RUNTIME_FILES "${GT4_MEMCARD_RUNTIME_SOURCE}/sio2.cpp" "${GT4_IPU_RU
 foreach(source IN LISTS perf_sources)
     list(APPEND RUNTIME_FILES "${GT4_PERF_RUNTIME_SOURCE}/${source}")
 endforeach()
+# TASK-100 S7b, wired for Android by TASK-180b: a Spec II runtime capsule also carries the IOP reboot rule
+# (donor runtime/src/iop/sif.cpp, scripts/spec2_iop_overlay.inc). native/CMakeLists.txt has spliced it since S7b; this
+# build did not, so libgt4spec2.so shipped with the donor's synchronous FILEIO server. The game then reboots the IOP
+# with DNAS310.IMG, its devctl on dev9x: returns -1 without the 0x80000011 completion packet, and the guest waits at
+# the network init forever with a black picture (TASK-180b: 0 GIF bytes, every thread idle at the VBlank).
+if(GT4_TARGET STREQUAL "spec2" AND EXISTS "${GT4_PERF_RUNTIME_SOURCE}/sif.cpp")
+    string(JSON spec2_sif_hash GET "${perf_manifest}" source_sha256 "sif.cpp")
+    gt4_require_sha256("${GT4_PERF_RUNTIME_SOURCE}/sif.cpp" "${spec2_sif_hash}" "Spec II IOP runtime capsule sif.cpp")
+    list(REMOVE_ITEM RUNTIME_FILES "${DONOR}/runtime/src/iop/sif.cpp")
+    list(APPEND RUNTIME_FILES "${GT4_PERF_RUNTIME_SOURCE}/sif.cpp")
+    message(STATUS "Spec II IOP reboot rule: iop/sif.cpp from ${GT4_PERF_RUNTIME_SOURCE}")
+elseif(GT4_TARGET STREQUAL "spec2")
+    message(FATAL_ERROR "a Spec II build needs a runtime capsule with the IOP reboot rule (sif.cpp), e.g. slice276-spec2-iop-runtime")
+endif()
 # LP64 portability of the pinned capsule (Windows is LLP64): in vu_micro.cpp the two report-period lambdas return
 # std::strtoull (unsigned long long) on one path and std::uint64_t (unsigned long on LP64) on the other, which LP64
 # refuses as two deduced return types. The capsule cannot change (it is pinned), so the Android build compiles a copy

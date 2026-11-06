@@ -292,13 +292,16 @@ fn a_coregs20_session_runs_the_hw_renderer_with_the_shared_choices() {
     assert!(!launch::coregs20_section(&settings, None, false, &textures).contains("hw_present_mode"));
     settings.set("vsync", "on").unwrap();
 
-    settings.set_gs("performance_mode", "no-readbacks").unwrap();
+    settings.set_gs("effect_flares", "false").unwrap();
+    settings.set_gs("effect_road_sheen", "false").unwrap();
     settings.set_gs("texture_load", "false").unwrap();
     settings.set_gs("fxaa", "true").unwrap();
     settings.set("coregs_sharpening", "medium").unwrap();
     settings.set("frame_rate", "30").unwrap();
     let tuned = env_map(&launch::coregs20_environment(&settings, None, true, &textures));
-    assert_eq!(tuned["GT4_CORE2_PERFORMANCE"], "1");
+    assert_eq!(tuned["GT4_CORE2_PERF_FLARES"], "1", "the flare toggle off");
+    assert_eq!(tuned["GT4_CORE2_PERF_ROAD_SHEEN"], "1", "the road sheen toggle off");
+    assert!(!tuned.contains_key("GT4_CORE2_PERFORMANCE"), "the bundle is not sent any more");
     assert_eq!(tuned["GT4_FRAME_SKIP_FORCE"], "2");
     assert!(!tuned.contains_key("GT4_FRAME_SKIP"), "30 FPS is the fixed pattern alone");
     assert!(!tuned.contains_key("GT4_HW_TEXTURES"));
@@ -308,7 +311,8 @@ fn a_coregs20_session_runs_the_hw_renderer_with_the_shared_choices() {
 
     let section = launch::coregs20_section(&settings, Some(&display), false, &textures);
     assert!(section.starts_with("renderer=coregs20\n"));
-    assert!(section.contains("hw_scale=2\n") && section.contains("hw_performance=1\n") && section.contains("hw_postfx=fxaa\n"));
+    assert!(section.contains("hw_scale=2\n") && section.contains("hw_effect_flares=1\n") && section.contains("hw_postfx=fxaa\n"));
+    assert!(section.contains("hw_effect_road_sheen=1\n"));
     assert!(section.contains("hw_sharpening=0.2\n"));
     assert!(section.contains("hw_frame_skip=2\n"));
     assert!(!section.contains("hw_frame_skip_adaptive"));
@@ -607,7 +611,7 @@ fn both_window_modes_pass_window_and_send_gt4_fullscreen_to_the_game_and_the_gs_
 #[test]
 fn the_parked_flare_limits_are_never_sent() {
     let mut performance = Settings::default();
-    performance.set_gs("performance_mode", "no-readbacks").unwrap();
+    performance.set_gs("effect_flares", "false").unwrap();
     let accurate = Settings::default();
     for settings in [&performance, &accurate] {
         assert!(!env_map(&plan_launch(&inputs(), settings, None, &[]).environment)

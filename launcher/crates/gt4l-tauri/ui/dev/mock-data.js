@@ -176,8 +176,29 @@
       default: 100, current: 100 },
     { id: "fxaa", label: "Anti-aliasing (FXAA)", help: "Smooths jagged edges with a fast filter. It softens fine detail a little. Off by default.",
       page: "basic", group: "graphics", control: "toggle", values: null, default: false, current: false },
-    { id: "performance_mode", label: "Performance Mode", help: "Faster on weaker PCs. Some effects that read the image back are skipped, such as headlight and sun flares and the car icons next to the gap time. Applies the next time you play.",
-      page: "basic", group: "graphics", control: "toggle", values: null, default: false, current: false },
+    // TASK-186: Performance Mode is gone; its items are effect toggles on by default, then the two GSdx-only settings of
+    // the old bundle (blending accuracy and the readback mode).
+    { id: "effect_flares", label: "Sun glare and light flares", help: "The sun's glare and the night lights' flares. Turning them off is the biggest speed gain of the old Performance Mode.",
+      page: "basic", group: "graphics", control: "toggle", values: null, default: true, current: true },
+    { visible_when: { id: "renderer", equals: "coregs20" }, id: "effect_road_sheen", label: "Road sheen", help: "The shine over the road that GT4 draws as a full-screen pass.",
+      page: "basic", group: "graphics", control: "toggle", values: null, default: true, current: true },
+    { visible_when: { id: "renderer", equals: "pcsx2" }, id: "blending", label: "Blending accuracy", help: "How exactly the graphics card combines colours when the game blends two layers.",
+      page: "basic", group: "graphics", control: "dropdown",
+      values: [
+        { value: "high", label: "High (default)" },
+        { value: "minimum", label: "Minimum (faster)" }
+      ],
+      default: "high", current: "high" },
+    { visible_when: { id: "renderer", equals: "pcsx2" }, id: "hw_download_mode", label: "Readbacks", help: "How the graphics plugin reads images back from the graphics card.",
+      page: "basic", group: "graphics", control: "dropdown",
+      values: [
+        { value: "accurate", label: "Accurate (default)" },
+        { value: "enabled-force-full", label: "Enabled, force full" },
+        { value: "no-readbacks", label: "No readbacks" },
+        { value: "unsynchronized", label: "Unsynchronized (faster, may drop effects)" },
+        { value: "disabled", label: "Disabled" }
+      ],
+      default: "accurate", current: "accurate" },
     { visible_when: { id: "renderer", equals: "pcsx2" }, id: "cas_mode", label: "Sharpening (CAS)", help: "FidelityFX Contrast Adaptive Sharpening. Off leaves the picture as the game drew it.",
       page: "basic", group: "graphics", control: "dropdown",
       values: [

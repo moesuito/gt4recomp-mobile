@@ -48,7 +48,8 @@ def evidence(digest, files, data_root=True):
 
 class ReadbackModeTests(unittest.TestCase):
     def test_modes_map_to_the_pcsx2_hardware_download_mode(self):
-        self.assertEqual(probe.GS_READBACK_MODES, {'accurate': 0, 'no-readbacks': 2})
+        self.assertEqual(probe.GS_READBACK_MODES, {'accurate': 0, 'enabled-force-full': 1, 'no-readbacks': 2,
+                                                  'unsynchronized': 3, 'disabled': 4})
         self.assertIn('HWDownloadMode = 0\n', probe.gs_config_text({}))
         self.assertIn('HWDownloadMode = 0\n', probe.gs_config_text({'GT4_GS_READBACK': 'accurate'}))
         self.assertIn('HWDownloadMode = 2\n', probe.gs_config_text({'GT4_GS_READBACK': 'no-readbacks'}))

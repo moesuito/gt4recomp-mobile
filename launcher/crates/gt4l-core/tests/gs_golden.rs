@@ -3,7 +3,7 @@
 //! The fixtures in tests/fixtures/gs were written by scripts/gs_settings.py (Python in text mode on Windows, so the
 //! lines end with CRLF). Regenerate them only with that script; never edit them by hand.
 //! Commands used (repository root, Python from private/tooling-venv):
-//!   python -I scripts/gs_settings.py ini --set upscale=2 --set performance_mode=no-readbacks
+//!   python -I scripts/gs_settings.py ini --set upscale=2 --set hw_download_mode=no-readbacks
 //!       --set fxaa=true --set mipmap=false --set blending=high --out <file>
 //!   (regenerated 2026-10-21: aspect is fixed at 16:9 and the PCSX2 OSD rows are always written off, so aspect=4:3
 //!   is no longer accepted and both files gained the OsdShow* lines)
@@ -37,7 +37,7 @@ fn default_session_ini_matches_the_python_writer_byte_for_byte() {
 fn user_settings_ini_matches_the_python_writer_byte_for_byte() {
     let settings = map(&[
         ("upscale", "2"),
-        ("performance_mode", "no-readbacks"),
+        ("hw_download_mode", "no-readbacks"),
         ("fxaa", "true"),
         ("mipmap", "false"),
         ("blending", "high"),
@@ -47,16 +47,33 @@ fn user_settings_ini_matches_the_python_writer_byte_for_byte() {
 }
 
 #[test]
-fn performance_mode_toggle_round_trips_to_the_gt4gs_ini_readback_key() {
-    // TASK-091: Off is Accurate (HWDownloadMode 0, the default and always written); On is NoReadbacks (2).
-    let off = gs_table::render_ini(&BTreeMap::new(), &BTreeMap::new()).expect("render");
-    assert!(off.contains("HWDownloadMode = 0\n"), "{off}");
-    let on = gs_table::render_ini(&map(&[("performance_mode", "no-readbacks")]), &BTreeMap::new()).expect("render");
-    assert!(on.contains("HWDownloadMode = 2\n"), "{on}");
-    assert_eq!(on.matches("HWDownloadMode").count(), 1, "the key is written once");
-    let accurate = gs_table::render_ini(&map(&[("performance_mode", "accurate")]), &BTreeMap::new()).expect("render");
-    assert!(accurate.contains("HWDownloadMode = 0\n"));
-    assert!(gs_table::render_ini(&map(&[("hw_download_mode", "accurate")]), &BTreeMap::new()).is_err(), "the old row is gone");
+fn the_readback_row_round_trips_to_the_gt4gs_ini_key_and_the_old_toggle_is_gone() {
+    // TASK-186: Readbacks is a player row again with the five values of the row before TASK-091; the default is Accurate
+    // (HWDownloadMode 0, always written).
+    let accurate = gs_table::render_ini(&BTreeMap::new(), &BTreeMap::new()).expect("render");
+    assert!(accurate.contains("HWDownloadMode = 0
+"), "{accurate}");
+    let none = gs_table::render_ini(&map(&[("hw_download_mode", "no-readbacks")]), &BTreeMap::new()).expect("render");
+    assert!(none.contains("HWDownloadMode = 2
+"), "{none}");
+    assert_eq!(none.matches("HWDownloadMode").count(), 1, "the key is written once");
+    let unsynchronized =
+        gs_table::render_ini(&map(&[("hw_download_mode", "unsynchronized")]), &BTreeMap::new()).expect("render");
+    assert!(unsynchronized.contains("HWDownloadMode = 3
+"));
+    assert!(gs_table::render_ini(&map(&[("performance_mode", "no-readbacks")]), &BTreeMap::new()).is_err(), "the bundle row is gone");
+}
+
+#[test]
+fn blending_is_high_or_minimum_and_nothing_else() {
+    // TASK-186: the old Performance Mode's second GSdx setting, now a row with the preset's two values.
+    let high = gs_table::render_ini(&BTreeMap::new(), &BTreeMap::new()).expect("render");
+    assert!(high.contains("accurate_blending_unit = 3
+"), "{high}");
+    let minimum = gs_table::render_ini(&map(&[("blending", "minimum")]), &BTreeMap::new()).expect("render");
+    assert!(minimum.contains("accurate_blending_unit = 0
+"), "{minimum}");
+    assert!(gs_table::render_ini(&map(&[("blending", "maximum")]), &BTreeMap::new()).is_err(), "Maximum is not offered");
 }
 
 #[test]

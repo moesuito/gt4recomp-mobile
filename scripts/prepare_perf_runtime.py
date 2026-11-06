@@ -531,6 +531,51 @@ def apply_frame_cost(name, source):
     return result
 
 
+# TASK-180b: the inside of run_due_events (one scope in the F8 report). Each of its parts gets a scope of its own, so the
+# F8 [frame] line says whether the worker pump, the SIF pump, the event drain or the VBlank callback took the time. Only
+# the measurement changes; the guest sees nothing. Applied after --frame-cost, whose scope anchors come first.
+RUNLOOP_BREAKDOWN_PATCHES = {
+    'system.cpp': [
+        ('    gt4::mtvu::pump();\n    sync_iop();\n',
+         '    {\n'
+         '        gt4::perf::Scope perf_pump(gt4::perf::Category::runloop_mtvu_pump);\n'
+         '        gt4::mtvu::pump();\n'
+         '    }\n'
+         '    sync_iop();\n'),
+        ('    sif::pump();\n',
+         '    {\n'
+         '        gt4::perf::Scope perf_sif(gt4::perf::Category::runloop_sif_pump);\n'
+         '        sif::pump();\n'
+         '    }\n'),
+        ('    for (;;) {\n        const std::uint64_t t = now();\n',
+         '    gt4::perf::Scope perf_loop(gt4::perf::Category::runloop_events);\n'
+         '    for (;;) {\n        const std::uint64_t t = now();\n'),
+        ('    if (g_options.on_vblank) g_options.on_vblank();\n',
+         '    if (g_options.on_vblank) {\n'
+         '        gt4::perf::Scope perf_vblank(gt4::perf::Category::vblank_action);\n'
+         '        g_options.on_vblank();\n'
+         '    }\n'),
+    ],
+}
+
+
+def apply_runloop_breakdown(name, source):
+    """Adds the TASK-180b run_due_events breakdown; checks that removing it restores the input."""
+    result = source
+    for before, after in RUNLOOP_BREAKDOWN_PATCHES.get(name, ()):
+        if result.count(before) != 1:
+            raise ValueError(f'Expected one qualified TASK-180b run-loop site in {name}')
+        result = result.replace(before, after)
+    inverse = result
+    for before, after in reversed(RUNLOOP_BREAKDOWN_PATCHES.get(name, ())):
+        if inverse.count(after) != 1:
+            raise ValueError(f'Unexpected TASK-180b run-loop reversal in {name}')
+        inverse = inverse.replace(after, before)
+    if inverse != source:
+        raise ValueError(f'TASK-180b run-loop hooks do not reverse to the input: {name}')
+    return result
+
+
 def apply_frame_cost_gs_stream(name, source):
     """Adds the TASK-084 GS stream scope; checks that removing it restores the input."""
     result = source
@@ -548,11 +593,13 @@ def apply_frame_cost_gs_stream(name, source):
     return result
 
 
-def derive_mtvu_runtime_source(name, source, gs_stream=False, frame_cost=False):
+def derive_mtvu_runtime_source(name, source, gs_stream=False, frame_cost=False, runloop=False):
     """Derives one extra --mtvu source (gif.cpp, memory.cpp, hw.cpp, dmac.cpp): hooks only."""
     derived = apply_mtvu_runtime(name, source)
     if frame_cost:
         derived = apply_frame_cost(name, derived)
+    if runloop:
+        derived = apply_runloop_breakdown(name, derived)
     if gs_stream and name in GS_STREAM_PATCHES:
         derived = apply_gs_stream(name, derived)
         if frame_cost:
@@ -562,7 +609,7 @@ def derive_mtvu_runtime_source(name, source, gs_stream=False, frame_cost=False):
 
 
 def derive(name, source, *, split_vu=False, vu1_aot=False, vu0_aot=False, mtvu_measure=False, mtvu=False,
-           frame_cost=False):
+           frame_cost=False, runloop=False):
     original = source
     patches = [(before, after.replace('gt4::perf::Category::vu_interpret',
                 'gt4::perf::vu_interpreter_category(unit)') if split_vu else after)
@@ -591,17 +638,21 @@ def derive(name, source, *, split_vu=False, vu1_aot=False, vu0_aot=False, mtvu_m
         source = apply_mtvu_runtime(name, source)
         if frame_cost:
             source = apply_frame_cost(name, source)
+        if runloop:
+            source = apply_runloop_breakdown(name, source)
         return PREFIX + MTVU_PREFIX + source
     return PREFIX + source
 
 
 def prepare(output, assets_root=None, *, split_vu=False, vu1_aot=False, vu0_aot=False, mtvu_measure=False,
             mtvu=False, gs_stream=False, fsv_trace=False, halt_dump=False, frame_cost=False,
-            spec2_iop=False):
+            spec2_iop=False, runloop=False):
     if gs_stream:
         mtvu = True
     if frame_cost and not mtvu:
         raise ValueError('--frame-cost is derived on top of --mtvu')
+    if runloop and not frame_cost:
+        raise ValueError('--runloop-breakdown is derived on top of --frame-cost')
     if mtvu and mtvu_measure:
         raise ValueError('--mtvu and --mtvu-measure are separate capsules')
     if mtvu:
@@ -627,7 +678,7 @@ def prepare(output, assets_root=None, *, split_vu=False, vu1_aot=False, vu0_aot=
             raise ValueError(f'Qualified donor source differs: {name}')
         text = data.decode('utf-8').replace('\r\n', '\n')
         sources[name] = derive(name, text, split_vu=split_vu, vu1_aot=vu1_aot, vu0_aot=vu0_aot,
-                               mtvu_measure=mtvu_measure, mtvu=mtvu, frame_cost=frame_cost)
+                               mtvu_measure=mtvu_measure, mtvu=mtvu, frame_cost=frame_cost, runloop=runloop)
     if mtvu_measure:
         for name, (donor_path, expected) in MTVU_MEASURE_SOURCES.items():
             data = (donor / donor_path).read_bytes()
@@ -640,7 +691,7 @@ def prepare(output, assets_root=None, *, split_vu=False, vu1_aot=False, vu0_aot=
             if hashlib.sha256(data).hexdigest() != expected:
                 raise ValueError(f'Qualified donor source differs: {donor_path}')
             sources[name] = derive_mtvu_runtime_source(name, data.decode('utf-8').replace('\r\n', '\n'), gs_stream,
-                                                       frame_cost)
+                                                       frame_cost, runloop)
     fsv_sources = {}
     if fsv_trace:
         for name, expected in FSV_PIN.items():
@@ -705,6 +756,9 @@ def prepare(output, assets_root=None, *, split_vu=False, vu1_aot=False, vu0_aot=
     if gs_stream:
         receipt['gs_stream_profile'] = 'task035-seam-v1'
         receipt['gs_stream_sources'] = sorted(GS_STREAM_PATCHES)
+    if runloop:
+        receipt['runloop_breakdown_profile'] = 'task180b-v1'
+        receipt['runloop_breakdown_sources'] = sorted(RUNLOOP_BREAKDOWN_PATCHES)
     for name, text in sources.items():
         path = output / name
         path.write_text(text, encoding='utf-8', newline='\n')
@@ -729,7 +783,10 @@ if __name__ == '__main__':
                         help='TASK-100 S7b: the Spec II IOP reboot rule (DNAS310.IMG selects the asynchronous FILEIO server)')
     parser.add_argument('--frame-cost', action='store_true',
                         help='TASK-084: also add the frame-cost instrumentation hooks (run loop, VIF1 chain, GIF walk)')
+    parser.add_argument('--runloop-breakdown', action='store_true',
+                        help='TASK-180b: split run_due_events into worker pump, SIF pump, event drain and VBlank callback')
     args = parser.parse_args()
     prepare(args.output, args.assets_root, split_vu=args.split_vu, vu1_aot=args.vu1_aot, vu0_aot=args.vu0_aot,
             mtvu_measure=args.mtvu_measure, mtvu=args.mtvu, gs_stream=args.gs_stream, fsv_trace=args.fsv_trace,
-            halt_dump=args.halt_dump, frame_cost=args.frame_cost, spec2_iop=args.spec2_iop)
+            halt_dump=args.halt_dump, frame_cost=args.frame_cost, spec2_iop=args.spec2_iop,
+            runloop=args.runloop_breakdown)

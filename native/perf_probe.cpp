@@ -71,6 +71,7 @@ constexpr const char *names[] = {
     , "vu0_aot"
 #endif
     , "pacing_wait", "run_due_events", "kernel_service", "guest_idle", "syscall_dispatch"
+    , "runloop_mtvu_pump", "runloop_sif_pump", "runloop_events", "vblank_action"
 #ifdef GT4_MTVU_RUNTIME
     , "mtvu_wait_vblank", "mtvu_wait_download", "mtvu_wait_gs_privileged", "mtvu_wait_vu_memory",
     "mtvu_wait_gif_reset", "mtvu_wait_reset", "mtvu_wait_state", "mtvu_wait_other", "gs_drain", "mtvu_output",
@@ -317,10 +318,13 @@ static void print_frame_counters(std::FILE *file, std::uint64_t frames, std::uin
     return interval.categories[static_cast<std::size_t>(category)].exclusive_us / 1000.0 / n;
   };
   std::fprintf(file,
-               "[frame] run loop ms/frame: run_due_events=%.3f kernel_service=%.3f guest_idle=%.3f "
+               "[frame] run loop ms/frame: run_due_events=%.3f (worker pump=%.3f sif pump=%.3f events=%.3f "
+               "vblank=%.3f) kernel_service=%.3f guest_idle=%.3f "
                "syscall_dispatch=%.3f; syscalls/frame=%.1f in %.3f ms; thread_switches/frame=%.1f\n",
-               cat_ms(Category::run_due_events), cat_ms(Category::kernel_service), cat_ms(Category::guest_idle),
-               cat_ms(Category::syscall_dispatch), c.syscalls / n, c.syscall_us / 1000.0 / n, c.thread_switches / n);
+               cat_ms(Category::run_due_events), cat_ms(Category::runloop_mtvu_pump), cat_ms(Category::runloop_sif_pump),
+               cat_ms(Category::runloop_events), cat_ms(Category::vblank_action), cat_ms(Category::kernel_service),
+               cat_ms(Category::guest_idle), cat_ms(Category::syscall_dispatch), c.syscalls / n, c.syscall_us / 1000.0 / n,
+               c.thread_switches / n);
   std::fprintf(file, "[frame] gif bytes/frame: path1=%.0f path2=%.0f path3=%.0f; records/frame: path1=%.1f path2=%.1f "
                "path3=%.1f\n", c.gif_bytes[1] / n, c.gif_bytes[2] / n, c.gif_bytes[3] / n, c.gif_records[1] / n,
                c.gif_records[2] / n, c.gif_records[3] / n);

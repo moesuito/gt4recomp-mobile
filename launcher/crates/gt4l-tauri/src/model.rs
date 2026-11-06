@@ -1452,20 +1452,31 @@ mod table_tests {
     }
 
     #[test]
-    fn the_readback_row_is_gone_from_the_table() {
-        let table = settings_table(&Settings::default(), &Controls::default());
-        assert!(!ids(&table).contains(&"hw_download_mode".to_string()));
-        assert!(!pcsx2_table_rows().iter().any(|row| row.id == "hw_download_mode"));
-        assert!(!gs_table::rows().iter().any(|row| row.key == "HWDownloadMode" && row.id != "performance_mode"));
+    fn the_readback_row_is_a_gsdx_row_the_android_table_never_shows() {
+        // TASK-186: Readbacks is a player row again (table); Android has no GSdx, so the Android table filters it out.
+        let android = settings_table_for(Platform::Android, &Settings::default(), &Controls::default(), &[], &[], false);
+        assert!(!ids(&android).contains(&"hw_download_mode".to_string()), "no GSdx on Android");
+        let windows = settings_table_for(Platform::Windows, &Settings::default(), &Controls::default(), &[], &[], false);
+        assert!(ids(&windows).contains(&"hw_download_mode".to_string()), "the row is on the Windows Graphics page");
+        assert!(pcsx2_table_rows().iter().any(|row| row.id == "hw_download_mode"), "the row exists in the table");
+        let writers: Vec<&str> = gs_table::rows()
+            .iter()
+            .filter(|row| row.key == "HWDownloadMode")
+            .map(|row| row.id.as_str())
+            .collect();
+        assert_eq!(writers, ["hw_download_mode"], "the effect toggles never write the download mode");
     }
 
     #[test]
-    fn the_toggle_maps_on_and_off_to_the_two_readback_choices() {
-        let row = gs_table::row("performance_mode").expect("the hidden download row");
-        assert_eq!(toggle_choices(row), Some(("accurate", "no-readbacks")));
-        assert_eq!(gs_value_text(row, &json!(true)).as_deref(), Some("no-readbacks"), "On");
-        assert_eq!(gs_value_text(row, &json!(false)).as_deref(), Some("accurate"), "Off");
-        assert_eq!(gs_value_text(row, &json!("accurate")), None, "a toggle takes true or false");
+    fn the_gsdx_settings_are_plain_choices_not_toggles() {
+        for id in ["blending", "hw_download_mode"] {
+            let table_row = pcsx2_table_rows().into_iter().find(|row| row.id == id).unwrap();
+            assert_eq!(toggle_choices(table_row), None, "{id} is a choice of its own");
+        }
+        let blending = pcsx2_table_rows().into_iter().find(|row| row.id == "blending").unwrap();
+        assert_eq!(gs_value_text(blending, &json!("minimum")).as_deref(), Some("minimum"));
+        let readbacks = pcsx2_table_rows().into_iter().find(|row| row.id == "hw_download_mode").unwrap();
+        assert_eq!(gs_value_text(readbacks, &json!("unsynchronized")).as_deref(), Some("unsynchronized"));
         let other = pcsx2_table_rows().into_iter().find(|row| row.id == "fxaa").unwrap();
         assert_eq!(toggle_choices(other), None);
     }

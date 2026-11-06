@@ -199,8 +199,8 @@ pub fn gsdx_unavailable_message_in(reason: &str, log_folder: &Path, language: La
 }
 
 /// The variables of a PCSX2 GS session: `GT4_RENDERER=pcsx2`, the process and its pin, the session INI, the
-/// folders, and the fixed 480p and 16:9 holds (see `add_common`). Readback is accurate unless the table row
-/// `performance_mode` (Performance Mode, TASK-091) is On; it is written into the INI, so no variable is needed.
+/// folders, and the fixed 480p and 16:9 holds (see `add_common`). The rows themselves (`HWDownloadMode`, blending) are
+/// written into the INI by the table writer; the flare toggle is the game-side answer, so it travels as a variable.
 pub fn pcsx2_environment(settings: &Settings, paths: &Pcsx2Paths) -> Vec<(String, String)> {
     let mut variables: BTreeMap<&'static str, String> = BTreeMap::new();
     variables.insert("GT4_RENDERER", "pcsx2".to_string());
@@ -208,10 +208,15 @@ pub fn pcsx2_environment(settings: &Settings, paths: &Pcsx2Paths) -> Vec<(String
     variables.insert("GT4_GS_PROCESS_SHA256", paths.executable_sha256.clone());
     variables.insert("GT4_GS_CONFIG", paths.config.display().to_string());
     variables.insert("PS2_GS", "gpu".to_string());
-    // TASK-180 test5: Performance Mode is gone; the flare toggle drives the stream client's local zero answer (TASK-117)
-    // on this path. The road sheen is identified in CoreGS 2.0's batch classifier, which the external GS path does not
-    // run on the game side, so that item stays CoreGS-only and has no row here.
-    variables.insert("GT4_GS_HIDE_FLARES", flag(!settings.gs_is_on("effect_flares")));
+    // TASK-186: the flare toggle drives the stream client's local zero answer (TASK-117) on this path; the local answer is
+    // enabled only when the flares are off, so the car icons and the loading picture keep draining accurately. The road
+    // sheen is identified in CoreGS 2.0's batch classifier, which the external GS path does not run on the game side, so
+    // that item stays CoreGS-only and has no row here.
+    let flares = settings.gs_is_on("effect_flares");
+    variables.insert("GT4_GS_HIDE_FLARES", flag(!flares));
+    if !flares {
+        variables.insert("GT4_GS_READBACK_LOCAL", "1".to_string());
+    }
     add_common(&mut variables, settings);
     variables.into_iter().map(|(name, value)| (name.to_string(), value)).collect()
 }
@@ -222,8 +227,8 @@ pub fn uses_coregs20(settings: &Settings) -> bool {
 }
 
 /// The variables of a CoreGS 2.0 session (TASK-027). The renderer lives in the game executable, so no process, pin or
-/// INI goes with it. Scale: the session plan's multiplier, as GSdx gets it. Performance Mode (the same row as GSdx):
-/// flares hidden and the delayed downloads. Custom textures: the same Textures folder and the same row as GSdx. The card
+/// INI goes with it. Scale: the session plan's multiplier, as GSdx gets it. The effect toggles (TASK-186): each of the old
+/// Performance Mode's items is its own switch. Custom textures: the same Textures folder and the same row as GSdx. The card
 /// is passed by name; the game takes the best card when no card has that name, and `GT4_HW_ADAPTER` is left out when no
 /// card is known.
 pub fn coregs20_environment(
@@ -236,9 +241,12 @@ pub fn coregs20_environment(
     variables.insert("GT4_RENDERER", "hw".to_string());
     variables.insert("GT4_HW_CORE", "2".to_string());
     variables.insert("GT4_HW_SCALE", session_plan(settings, display, integrated_gpu).multiplier.to_string());
-    if settings.gs_value("performance_mode") == "no-readbacks" {
-        variables.insert("GT4_CORE2_PERFORMANCE", "1".to_string());
-    }
+    // TASK-186 (owner, 2026-11-06): Performance Mode is replaced by independent effect toggles. The renderer's switches name
+    // the effect they turn OFF (GT4_CORE2_PERF_<ITEM>=1); a toggle that is on sends 0, so the default of every effect is
+    // drawn as the original game. The road sheen is CoreGS-only (its classifier is core 2's). Blending accuracy and the
+    // Readbacks mode are GSdx rows: CoreGS 2.0 has neither setting.
+    variables.insert("GT4_CORE2_PERF_FLARES", flag(!settings.gs_is_on("effect_flares")));
+    variables.insert("GT4_CORE2_PERF_ROAD_SHEEN", flag(!settings.gs_is_on("effect_road_sheen")));
     // TASK-082: one frame drawn in two, in a running race. The physics stay at 60 Hz.
     // TASK-146 (rc12, experimental): 60 FPS lets the framerate drop in a running race when the PC falls behind, leaving
     // frames out so the game keeps its full speed; with time to spare every frame is drawn.
@@ -373,19 +381,16 @@ pub fn gs_config_text(
     integrated_gpu: bool,
 ) -> Result<String, String> {
     let mut user: BTreeMap<String, String> = settings.gs_overrides().clone();
+    // TASK-186: the effect toggles are launcher-only rows (written = "never"): they reach the game as variables, never in
+    // this file, so they are dropped before the table's own refusal sees them.
+    user.retain(|id, _| gs_table::row(id).map(|row| row.written != "never").unwrap_or(true));
     // TASK-108: the Adapter (the chosen graphics card's name) is written by the launcher, not by the table: its row is
     // not settable from a value yet (status resolved). It is added below the table's render, in its section.
     let adapter = user.remove("adapter").filter(|name| !name.is_empty());
     user.insert("upscale".to_string(), session_plan(settings, display, integrated_gpu).multiplier.to_string());
-    // TASK-180 test5 (owner, 2026-11-05): Performance Mode is no longer a preset. Blending accuracy is not an effect
-    // toggle (it changes how colours combine), so it stays at High, the accurate mode, for everyone.
-    user.insert("blending".to_string(), "high".to_string());
-    // The fast download mode is only used when every readback-based effect is off; the flares are the only one, so an
-    // effect that is on is never broken. The row is hidden from the UI and driven from here.
-    user.insert(
-        "performance_mode".to_string(),
-        if settings.gs_is_on("effect_flares") { "accurate" } else { "no-readbacks" }.to_string(),
-    );
+    // TASK-186 (owner, 2026-11-06): Performance Mode is no longer a preset. Blending accuracy and the Readbacks mode are
+    // player rows of the table now (`blending`, `hw_download_mode`), written by the table writer like every other row; no
+    // effect toggle writes either, so an effect that is on is never broken.
     let present = match settings.get("vsync") {
         "fast" => "mailbox",
         "off" => "immediate",
@@ -683,7 +688,8 @@ pub fn coregs20_section(settings: &Settings, display: Option<&DisplayTarget>, in
     for (name, value) in coregs20_environment(settings, display, integrated_gpu, textures) {
         let key = match name.as_str() {
             "GT4_HW_SCALE" => "hw_scale",
-            "GT4_CORE2_PERFORMANCE" => "hw_performance",
+            "GT4_CORE2_PERF_FLARES" => "hw_effect_flares",
+            "GT4_CORE2_PERF_ROAD_SHEEN" => "hw_effect_road_sheen",
             "GT4_FRAME_SKIP_FORCE" => "hw_frame_skip",
             "GT4_FRAME_SKIP" => "hw_frame_skip_adaptive",
             "GT4_HW_HUD" => "hw_hud",

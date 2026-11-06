@@ -201,8 +201,8 @@ def main():
             if args.gs_scale is not None and 'upscale' in settings:
                 raise ValueError('--gs-scale (or --gs-resolution) and --gs-setting upscale=... both set the internal '
                                  'resolution')
-            if args.gs_readback is not None and 'performance_mode' in settings:
-                raise ValueError('--gs-readback and --gs-setting performance_mode=... both set the readback mode')
+            if args.gs_readback is not None and 'hw_download_mode' in settings:
+                raise ValueError('--gs-readback and --gs-setting hw_download_mode=... both set the readback mode')
             os.environ[GS_SETTINGS_ENV] = gs_settings.settings_to_json(settings)
         if args.gs_readback is not None:
             if args.mode not in PCSX2_MODES:

@@ -414,15 +414,16 @@ void check_resolve() {
   {
     World chosen = ready_world();
     sa::Inputs choice = inputs_for(*layout, nullptr);
-    choice.config = sa::parse_config("version=1\nrenderer=coregs20\nhw_scale=4\nhw_performance=1\nhw_frame_skip=2\nhw_hud=1\nhw_present_shared_queue=0\nhw_textures=D:/T\nhw_adapter=Card\n");
+    choice.config = sa::parse_config("version=1\nrenderer=coregs20\nhw_scale=4\nhw_effect_flares=0\nhw_effect_road_sheen=1\nhw_frame_skip=2\nhw_hud=1\nhw_present_shared_queue=0\nhw_textures=D:/T\nhw_adapter=Card\n");
     check(choice.config->warnings.empty(), "the launcher's CoreGS 2.0 keys are accepted");
-    check(!sa::parse_config("renderer=donor\nhw_scale=13\nhw_performance=0\n").warnings.empty(), "other values are refused");
+    check(!sa::parse_config("renderer=donor\nhw_scale=13\nhw_effect_flares=2\n").warnings.empty(), "other values are refused");
     // TASK-174: the one-queue presentation key is accepted only as 0, the launcher's Presentation thread off.
     check(!sa::parse_config("hw_present_shared_queue=1\n").warnings.empty(), "hw_present_shared_queue=1 is refused");
     check(!sa::renderer_needed(choice, chosen.access()), "CoreGS 2.0 needs no GSdx files");
     const sa::Resolved coregs = sa::resolve(choice, chosen.access());
     check(!coregs.needs_renderer && has(coregs.set, "GT4_RENDERER", "hw") && has(coregs.set, "GT4_HW_CORE", "2") &&
-              has(coregs.set, "GT4_HW_SCALE", "4") && has(coregs.set, "GT4_CORE2_PERFORMANCE", "1") && has(coregs.set, "GT4_FRAME_SKIP_FORCE", "2") &&
+              has(coregs.set, "GT4_HW_SCALE", "4") && has(coregs.set, "GT4_CORE2_PERF_FLARES", "0") &&
+              has(coregs.set, "GT4_CORE2_PERF_ROAD_SHEEN", "1") && has(coregs.set, "GT4_FRAME_SKIP_FORCE", "2") &&
               has(coregs.set, "GT4_HW_HUD", "1") && has(coregs.set, "GT4_HW_PRESENT_SHARED_QUEUE", "0") && has(coregs.set, "GT4_HW_TEXTURES", "D:/T") &&
               has(coregs.set, "GT4_HW_ADAPTER", "Card"),
           "game.ini's CoreGS 2.0 keys become its variables");

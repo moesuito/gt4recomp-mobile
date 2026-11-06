@@ -20,6 +20,10 @@ enum class Category : std::size_t {
   // TASK-084 step 0 (slice260, docs/FRAME-COST-STUDY.md section 6): the pacer's sleep and the run-loop scopes, so the
   // F8 interval separates work from sleep and splits ee_dispatch/unattributed. Printed in the legacy lines.
   pacing_wait, run_due_events, kernel_service, guest_idle, syscall_dispatch,
+  // TASK-180b: the inside of run_due_events, which is one scope in the F8 report and used to hide which of its parts
+  // took the time (the worker pump, the SIF pump, the event drain and the VBlank callback). Always measured with the
+  // report on, so Android and Windows read the same sections.
+  runloop_mtvu_pump, runloop_sif_pump, runloop_events, vblank_action,
 #ifdef GT4_MTVU_RUNTIME
   // TASK-011 step 3 (slice171): EE waits for the VU1 worker, by sync reason; GS front end executed from the journal;
   // worker-side GIF output (PATH1/PATH2 bytes). Reported only in the [mtvu] section, never in the legacy lines.

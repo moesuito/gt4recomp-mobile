@@ -837,7 +837,12 @@ void sync(const char *reason) {
 void pump() {
   Runtime &r = rt();
   if (!enabled()) return;
-  r.journal->drain(false);
+  // TASK-180b: the pump is called from run_due_events, whose own scope hid this wait; gs_drain names the journal drain
+  // (including any back-pressure it meets) apart from the worker error check.
+  {
+    gt4::perf::Scope drain(gt4::perf::Category::gs_drain);
+    r.journal->drain(false);
+  }
   rethrow_worker_error();
 }
 

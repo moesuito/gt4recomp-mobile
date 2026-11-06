@@ -522,8 +522,14 @@ void vsync_now(bool odd_field) {
   const bool hold = gt4::pacing::frame_skip_engaged.load(std::memory_order_relaxed) && !g_display_page_changed;
   g_display_page_changed = false;
   hw.set_age_targets(!hold);
+  // TASK-180b: the per-VBlank work of this thread, so a slow present on a phone or an emulator can be told from the
+  // renderer's own stages (GT4_GS_PRESENT_LOG=1; off, this reads one static flag and prints nothing).
+  static const bool present_log = std::getenv("GT4_GS_PRESENT_LOG") != nullptr;
+  const auto flush_start = std::chrono::steady_clock::now();
   hw.flush();
+  const auto flush_end = std::chrono::steady_clock::now();
   hw.next_frame();  // one guest frame per VBlank, windowed or headless (the session line's `frames`)
+  const auto before_present = std::chrono::steady_clock::now();
   if (hw.has_window() && !hold) {
     // Without a thread to show pictures from (hw_gs_backend.cpp, present_paced; the rendering queue path) the wait is here, and holds
     // up the next picture. So it leaves room, or waiting would raise the mean interval it waits for: it locked at 20 frames per second.
@@ -536,6 +542,14 @@ void vsync_now(bool odd_field) {
     hw.present(odd_field ? PresentPhase::field_odd : PresentPhase::field_even);
   }
   const auto finished = std::chrono::steady_clock::now();
+  if (present_log && g_vsyncs % 10 == 0) {
+    const auto ms = [](std::chrono::steady_clock::time_point from, std::chrono::steady_clock::time_point to) {
+      return std::chrono::duration<double, std::milli>(to - from).count();
+    };
+    std::fprintf(stderr, "[gs] vblank %llu: flush %.2f ms, next_frame %.2f ms, present %.2f ms, total %.2f ms (window %d)\n",
+                 static_cast<unsigned long long>(g_vsyncs), ms(flush_start, flush_end), ms(flush_end, before_present),
+                 ms(before_present, finished), ms(flush_start, finished), hw.has_window() ? 1 : 0);
+  }
   // What a drawn frame took: from the last frame drawn, without the time with nothing to do or spent waiting above.
   g_gs_idle += waited;
   if (!hold) {

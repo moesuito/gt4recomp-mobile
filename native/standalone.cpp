@@ -365,6 +365,8 @@ Config parse_config(std::string_view text) {
       valid = (value.size() == 1 && value[0] >= '1' && value[0] <= '9') || value == "10" || value == "11" || value == "12";
     } else if (key == "hw_performance") {
       valid = value == "1";
+    } else if (key == "hw_effect_flares" || key == "hw_effect_road_sheen") {
+      valid = value == "0" || value == "1";  // TASK-186: the effect toggles (1 = drawn, the launcher's default)
     } else if (key == "hw_frame_skip") {
       valid = value == "2";  // the 30 FPS mode: one frame drawn in two
     } else if (key == "hw_frame_skip_adaptive") {
@@ -478,6 +480,8 @@ Environment coregs20_environment(const Config &config) {
   Environment out = {{"GT4_RENDERER", "hw"}, {"GT4_HW_CORE", "2"}};
   for (const auto &[key, name] : {std::pair<const char *, const char *>{"hw_scale", "GT4_HW_SCALE"},
                                   {"hw_performance", "GT4_CORE2_PERFORMANCE"},
+                                  {"hw_effect_flares", "GT4_CORE2_PERF_FLARES"},
+                                  {"hw_effect_road_sheen", "GT4_CORE2_PERF_ROAD_SHEEN"},
                                   {"hw_frame_skip", "GT4_FRAME_SKIP_FORCE"},
                                   {"hw_frame_skip_adaptive", "GT4_FRAME_SKIP"},
                                   {"hw_hud", "GT4_HW_HUD"},

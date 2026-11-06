@@ -43,7 +43,6 @@ schema_version = 1
 [[profile]]
 name = "gt4-defaults"
 description = "Reset to defaults: GT4 default for every settable row (owner decisions, 2026-10-16)."
-
 [[setting]]
 id = "gs_engine"
 label = "Renderer"
@@ -115,29 +114,6 @@ choices = [
   { name = "11x", ini = "11", status = "ok", offered = false },
 ]
 notes = "TASK-080 addendum (owner, 2026-10-21): no longer offered. The launcher writes it from the display plan (gt4l-core display::display_plan): k = ceil(max(W / 640, H / 448)) for the output size W x H, times the Render scale (50% to 200%), rounded to a whole multiplier (ties up) and clamped to 1..12; every value 1 to 12 is a choice of this row, so the allow-list is unchanged. Before: Owner decision 2026-10-16 (TASK-060/061/062 request): the launcher showed ONLY the six presets 480p (1x), 720p (2x), 1080p (3x), 1440p (4x), 4K (6x) and 8K (12x), with PCSX2's width-based mapping (640 x scale >= the target width: 1280, 1920, 2560, 3840, 7680). Default 1080p (3x) in the table; the launcher (TASK-019) will pick the smallest preset whose height is at least the monitor's VERTICAL resolution (unknown monitor: 1080p; scripts/gs_settings.py upscale_preset_for_monitor) and grey out presets above the GPU limit max(max texture size / 1280, 1) (upscale_presets_within_texture_limit). The other multipliers (5x, 7x to 11x) stay settable from the command line (play_performance.py --gs-scale N keeps 1 to 12) but are not offered. Range history: D.1, widened by owner decision 6 (2026-10-16). The loader accepts 1 to 12 (pcsx2/Pcsx2Config.cpp:1045). PCSX2 clamps any value above GSGetMaxUpscaleMultiplier = max(max texture size / 1280, 1) (pcsx2/GS/GS.cpp:677-681) with an OSD warning (pcsx2/GS/GS.cpp:225-240). A 16384-texel GPU allows 12x; 8192 allows 6x. READY carries no max-upscale field: ReadyPayload (3rdparty/gt4recomp-gs-stream/gs_stream_protocol.h:177-187) has only a reserved u32. Until gt4-gs reports the limit, the launcher offers 1 to 12 and PCSX2 clamps. ExtendedUpscalingMultipliers is NOT required up to 12x (see extended_upscale). --gs-scale N sets this row (GT4_GS_SCALE)."
-
-[[setting]]
-id = "blending"
-label = "Blending accuracy"
-help = "Accuracy of the GS blending unit emulation. Set by Performance Mode: Minimum when it is on, High otherwise (owner, 2026-10-26: Minimum measured about 1.5 ms less per frame on the weak laptop)."
-page = "hidden"
-order = 2
-control = "dropdown"
-section = "EmuCore/GS"
-key = "accurate_blending_unit"
-type = "enum"
-default = "high"
-written = "always"
-status = "ok"
-choices = [
-  { name = "minimum", ini = "0", status = "ok" },
-  { name = "basic", ini = "1", status = "ok" },
-  { name = "medium", ini = "2", status = "ok" },
-  { name = "high", ini = "3", status = "ok" },
-  { name = "full", ini = "4", status = "ok" },
-  { name = "maximum", ini = "5", status = "ok" },
-]
-notes = "AccBlendLevel (pcsx2/Config.h:330-337, Minimum = 0 to Maximum = 5). Loader pcsx2/Pcsx2Config.cpp:1054. PCSX2 default is Basic (pcsx2/Config.h:726); the owner keeps High (3). UI list pcsx2/ImGui/FullscreenUI_Settings.cpp:2881-2888. Full and Maximum are slow (UI text)."
 
 [[setting]]
 id = "deinterlace"
@@ -218,28 +194,9 @@ status = "ok"
 notes = "true for fifo and immediate, false for mailbox (TASK-036). Loader pcsx2/Pcsx2Config.cpp:930."
 
 [[setting]]
-id = "performance_mode"
-label = "Performance Mode"
-help = "Faster on weaker PCs. The game stops waiting for the graphics card to send images back: the car icons next to the gap time can come out blank and the loading screen picture may be missing. The night lights and the sun glare are turned off. Applies the next time you play."
-page = "hidden"
-order = 58
-control = "toggle"
-section = "EmuCore/GS"
-key = "HWDownloadMode"
-type = "enum"
-default = "accurate"
-written = "always"
-status = "ok"
-choices = [
-  { name = "accurate", ini = "0", status = "ok", label = "Off" },
-  { name = "no-readbacks", ini = "2", status = "ok", label = "On" },
-]
-notes = "TASK-091 (release 1.2.1, owner 2026-10-22): replaces the Readbacks row (hw_download_mode, which had five values). A toggle over an enum: the first choice is Off, the second On. Off = Accurate = GSHardwareDownloadMode Enabled (0), the default; On = NoReadbacks (2) (pcsx2/Config.h:399-405). TASK-180 test5 (owner, 2026-11-05): Performance Mode is no longer a player row; the effect toggles below replace it. This row stays as the launcher's way into HWDownloadMode and is driven from effect_flares (the fast mode only when the flares are off, the one readback-based effect). Migration: settings schema 10 (migrate.rs settings_9_to_10) turns a stored no-readbacks into every effect toggle off and drops the key."
-
-[[setting]]
 id = "effect_flares"
 label = "Sun glare and light flares"
-help = "The sun's glare and the night lights' flares. Turning them off is the biggest speed gain of the old Performance Mode: the game no longer reads the flare visibility table back from the graphics card every frame, so the processor never waits for it."
+help = "The sun's glare and the night lights' flares. Turning them off is the biggest speed gain of the old Performance Mode: the game answers the flare visibility table with zeros itself, so no light flare and no sun glare is drawn and the processor never waits for the graphics card to send it back."
 page = "basic"
 order = 8
 control = "toggle"
@@ -251,7 +208,7 @@ written = "never"
 offered = true
 status = "ok"
 env = "GT4_CORE2_PERF_FLARES"
-notes = "TASK-180 test5 (owner, 2026-11-05): 'flare do sol, flare de luz' as one toggle. The VU1 scales the sun glare and every light flare by the entries of ONE 64 x 8 visibility table (IN-441), so the two cannot be split exactly; one toggle hides both. On = drawn as the original game (the accurate readback); off = the table is answered as zeros at once (GT4_CORE2_PERF_FLARES=1, the GSdx path's GT4_GS_HIDE_FLARES=1) and no flare is drawn. Readback-based item: the GSdx path uses the fast download mode only when this is off."
+notes = "TASK-180 test5 (owner, 2026-11-05): 'flare do sol, flare de luz' as one toggle. The VU1 scales the sun glare and every light flare by the entries of ONE 64 x 8 visibility table (IN-441), so the two cannot be split exactly; one toggle hides both. On = drawn as the original game (the accurate readback); off = the table is answered as zeros at once (GT4_CORE2_PERF_FLARES=1, the GSdx path's GT4_GS_HIDE_FLARES=1 with GT4_GS_READBACK_LOCAL=1) and no flare is drawn. TASK-186: no effect toggle writes HWDownloadMode; the flares are hidden on the game side only."
 
 [[setting]]
 id = "effect_road_sheen"
@@ -269,6 +226,47 @@ offered = true
 status = "ok"
 env = "GT4_CORE2_PERF_ROAD_SHEEN"
 notes = "TASK-180 test5 (owner, 2026-11-05): 'brilho no asfalto'. CoreGS 2.0 only: the sheen is identified in the core 2 batch classifier (IN-501: blend state and coverage over the frame) and its alpha-lane fills go with it (IN-502). The GSdx path streams raw GIF to the external GS and has no classifier on the game side, so its row is not offered there (GT4_CORE2_PERF_ROAD_SHEEN=1 / GT4_CORE2_ROAD_SHEEN=0 for CoreGS 2.0)."
+
+[[setting]]
+id = "blending"
+label = "Blending accuracy"
+help = "How exactly the graphics card combines colours when the game blends two layers. High is exact and is the default. Minimum is faster (the old Performance Mode used it, about 1.5 ms less per frame on the weak laptop) and can make some translucent effects look wrong."
+page = "basic"
+order = 10
+control = "dropdown"
+section = "EmuCore/GS"
+key = "accurate_blending_unit"
+type = "enum"
+default = "high"
+written = "always"
+status = "ok"
+choices = [
+  { name = "high", ini = "3", status = "ok", label = "High (default)" },
+  { name = "minimum", ini = "0", status = "ok", label = "Minimum (faster)" },
+]
+notes = "TASK-186 (owner, 2026-11-06): the second half of the old Performance Mode on the GSdx path, now its own row (it was a hidden row set by the preset, TASK-118). AccBlendLevel (pcsx2/Config.h:330-337, Minimum = 0 to Maximum = 5). Loader pcsx2/Pcsx2Config.cpp:1054. PCSX2 default is Basic (pcsx2/Config.h:726); the owner keeps High (3). Only High and Minimum are offered now (the preset's two values); a stored other value from a hand-edited file is warned about and falls back to High. GSdx only: the row is hidden under CoreGS 2.0 (and therefore on Android)."
+
+[[setting]]
+id = "hw_download_mode"
+label = "Readbacks"
+help = "How the graphics plugin reads images back from the graphics card. Accurate (default) is exact. Any other value is faster but the car icons next to the gap time can come out blank and the loading screen picture may be missing."
+page = "basic"
+order = 11
+control = "dropdown"
+section = "EmuCore/GS"
+key = "HWDownloadMode"
+type = "enum"
+default = "accurate"
+written = "always"
+status = "ok"
+choices = [
+  { name = "accurate", ini = "0", status = "ok", label = "Accurate (default)" },
+  { name = "enabled-force-full", ini = "1", status = "ok", label = "Enabled, force full" },
+  { name = "no-readbacks", ini = "2", status = "ok", label = "No readbacks" },
+  { name = "unsynchronized", ini = "3", status = "ok", label = "Unsynchronized (faster, may drop effects)" },
+  { name = "disabled", ini = "4", status = "ok", label = "Disabled" },
+]
+notes = "TASK-186 (owner, 2026-11-06): the pre-TASK-091 Readbacks row comes back with its five values and labels, default Accurate (0). The effect toggles no longer write HWDownloadMode (the flares are answered as zeros by our game code), so it is a player row again. GSHardwareDownloadMode (pcsx2/Config.h:399-405: Enabled = 0, EnabledForceFull = 1, NoReadbacks = 2, Unsynchronized = 3, Disabled = 4). Loader pcsx2/Pcsx2Config.cpp:1058. Non-accurate values blank the car icons next to the gap time and the loading-screen picture. GSdx only: the row is hidden under CoreGS 2.0 (and therefore on Android). Migration: settings schema 10 (migrate.rs settings_9_to_10) turns a stored Performance Mode into every effect off, Minimum blending and this row Accurate."
 
 [[setting]]
 id = "fxaa"

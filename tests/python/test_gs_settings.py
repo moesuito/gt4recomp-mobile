@@ -26,11 +26,11 @@ LEGACY_BASE = ('; gt4-gs.ini written by scripts/external_runtime_probe.py (TASK-
                '[EmuCore/GS]\n'
                'Renderer = 14\n'
                'upscale_multiplier = 3\n'
-               'accurate_blending_unit = 3\n'
                'deinterlace_mode = 0\n'
                'AspectRatio = 16:9\n'
                'VsyncEnable = true\n'
                'DisableMailboxPresentation = true\n'
+               'accurate_blending_unit = 3\n'
                'HWDownloadMode = 0\n'
                # Owner, 2026-10-21: PCSX2's own OSD rows are forced off and always written (GT4Recomp has its own
                # performance overlay).
@@ -86,15 +86,26 @@ class TableSchemaTests(unittest.TestCase):
         pairs = [(row['section'], row['key']) for row in rows() if row['section'] and row['key']]
         self.assertEqual(len(pairs), len(set(pairs)))
 
-    def test_readback_row_is_a_written_setting(self):
-        # TASK-091: the Readbacks row became Performance Mode (a toggle): Off = accurate, On = no-readbacks.
-        row = by_id()['performance_mode']
-        self.assertEqual((row['key'], row['written'], row['status'], row['control']), ('HWDownloadMode', 'always', 'ok', 'toggle'))
+    def test_readback_row_is_a_written_setting_again(self):
+        # TASK-186: Readbacks is a player row again with the five values of the row before TASK-091, Accurate by default.
+        row = by_id()['hw_download_mode']
+        self.assertEqual((row['key'], row['written'], row['status'], row['control']),
+                         ('HWDownloadMode', 'always', 'ok', 'dropdown'))
         self.assertEqual(row['default'], 'accurate')
         self.assertEqual({choice['name']: choice['status'] for choice in row['choices']},
-                         {'accurate': 'ok', 'no-readbacks': 'ok'})
-        self.assertNotIn('hw_download_mode', by_id())
+                         {'accurate': 'ok', 'enabled-force-full': 'ok', 'no-readbacks': 'ok',
+                          'unsynchronized': 'ok', 'disabled': 'ok'})
+        self.assertNotIn('performance_mode', by_id())
         self.assertNotIn('gt4_readback', by_id())
+
+    def test_the_effect_toggles_are_launcher_only_rows(self):
+        for identifier, env in (('effect_flares', 'GT4_CORE2_PERF_FLARES'),
+                                ('effect_road_sheen', 'GT4_CORE2_PERF_ROAD_SHEEN')):
+            row = by_id()[identifier]
+            self.assertEqual((row['type'], row['written'], row['default'], row['env']),
+                             ('bool', 'never', 'true', env), identifier)
+            self.assertFalse(row['section'] or row['key'], identifier)
+            self.assertEqual(gs_settings.parse_value(row, 'false'), 'false', identifier)
 
     def test_validator_refuses_bad_tables(self):
         with gs_settings.TABLE_PATH.open('rb') as handle:
@@ -248,7 +259,8 @@ class ValueTests(unittest.TestCase):
             with self.assertRaises(gs_settings.SettingsError, msg=refused):
                 gs_settings.parse_value(renderer, refused)
         self.assertEqual(gs_settings.parse_value(by_id()['filter'], 'bilinear-ps2'), 'bilinear-ps2')
-        self.assertEqual(gs_settings.parse_value(by_id()['performance_mode'], 'no-readbacks'), 'no-readbacks')
+        self.assertEqual(gs_settings.parse_value(by_id()['hw_download_mode'], 'no-readbacks'), 'no-readbacks')
+        self.assertEqual(gs_settings.parse_value(by_id()['blending'], 'minimum'), 'minimum')
 
     def test_path_values_are_single_line(self):
         self.assertEqual(gs_settings.parse_value(by_id()['cache_folder'], 'C:/cache'), 'C:/cache')
@@ -281,8 +293,9 @@ class IniTests(unittest.TestCase):
         text = gs_settings.render_ini(rows(), settings)
         self.assertEqual(text.splitlines(), [
             gs_settings.INI_HEADER, '[EmuCore/GS]', 'Renderer = 14', 'upscale_multiplier = 6',
-            'accurate_blending_unit = 3', 'deinterlace_mode = 0', 'AspectRatio = 16:9', 'VsyncEnable = true',
-            'DisableMailboxPresentation = true', 'HWDownloadMode = 0', 'fxaa = true', 'OsdShowFPS = false',
+            'deinterlace_mode = 0', 'AspectRatio = 16:9', 'VsyncEnable = true',
+            'DisableMailboxPresentation = true', 'accurate_blending_unit = 3', 'HWDownloadMode = 0', 'fxaa = true',
+            'OsdShowFPS = false',
             'OsdShowGPU = false', 'OsdShowResolution = false', 'LoadTextureReplacements = true',
             'LoadTextureReplacementsAsync = true', '', '[GT4GS]',
             'ProhibitDynamicCode = false'])
@@ -360,7 +373,10 @@ class OfferedTests(unittest.TestCase):
         offered = {row['id'] for row in gs_settings.offered(rows())}
         self.assertTrue({'graphics_api', 'vsync', 'fxaa'} <= offered)
         # TASK-118 (owner, 2026-10-26): deinterlace and blending were cut from the launcher (hidden rows, defaults written).
-        self.assertFalse({'deinterlace', 'blending'} & offered)
+        # TASK-118 (owner, 2026-10-26): deinterlace was cut from the launcher. TASK-186 brings blending back as a player
+        # row (High or Minimum), so it is offered now.
+        self.assertNotIn('deinterlace', offered)
+        self.assertTrue({'blending', 'hw_download_mode', 'effect_flares', 'effect_road_sheen'} <= offered)
         self.assertNotIn('aspect', offered)
         # TASK-080 addendum: the internal resolution follows the launcher's Resolution and Render scale.
         self.assertNotIn('upscale', offered)
@@ -403,7 +419,7 @@ class PlayPerformanceTests(unittest.TestCase):
                           ['--mode', 'pcsx2', '--gs-setting', 'nope=1'],
                           ['--mode', 'pcsx2', '--gs-setting', 'upscale=13'],
                           ['--mode', 'pcsx2', '--gs-setting', 'gt4_readback=accurate'],
-                          ['--mode', 'pcsx2', '--gs-setting', 'performance_mode=accurate', '--gs-readback', 'no-readbacks'],
+                          ['--mode', 'pcsx2', '--gs-setting', 'hw_download_mode=accurate', '--gs-readback', 'no-readbacks'],
                           ['--mode', 'pcsx2', '--gs-setting', 'upscale=2', '--gs-scale', '3']):
             with patch.dict(os.environ, {}, clear=False):
                 code, play = self.run_main(arguments)
@@ -459,10 +475,10 @@ class ProbeEnvironmentTests(unittest.TestCase):
     def test_readback_shortcut_and_json_conflict(self):
         self.assertIn('HWDownloadMode = 2\n', probe.gs_config_text({'GT4_GS_READBACK': 'no-readbacks'}))
         self.assertIn('HWDownloadMode = 0\n',
-                      probe.gs_config_text({'GT4_GS_SETTINGS': '{"performance_mode": "accurate"}'}))
-        with self.assertRaisesRegex(ValueError, 'both set performance_mode'):
+                      probe.gs_config_text({'GT4_GS_SETTINGS': '{"hw_download_mode": "accurate"}'}))
+        with self.assertRaisesRegex(ValueError, 'both set hw_download_mode'):
             probe.gs_config_text({'GT4_GS_READBACK': 'accurate',
-                                  'GT4_GS_SETTINGS': '{"performance_mode": "no-readbacks"}'})
+                                  'GT4_GS_SETTINGS': '{"hw_download_mode": "no-readbacks"}'})
         with self.assertRaisesRegex(ValueError, 'GT4_GS_READBACK must be one of'):
             probe.gs_config_text({'GT4_GS_READBACK': '3'})
 
@@ -480,8 +496,7 @@ ENUM_EXPECTED = {
                           'bilinear-forced-sprite-excluded': '3'}, 'bilinear-ps2'),
     'trilinear': ('TriFilter', {'automatic': '-1', 'off': '0', 'ps2': '1', 'forced': '2'}, 'automatic'),
     'anisotropic': ('MaxAnisotropy', {'off': '0', '2x': '2', '4x': '4', '8x': '8', '16x': '16'}, 'off'),
-    'blending': ('accurate_blending_unit', {'minimum': '0', 'basic': '1', 'medium': '2', 'high': '3',
-                                           'full': '4', 'maximum': '5'}, 'high'),
+    'blending': ('accurate_blending_unit', {'high': '3', 'minimum': '0'}, 'high'),
     'dithering': ('dithering_ps2', {'off': '0', 'scaled': '1', 'unscaled': '2', 'force-32bit': '3'}, 'unscaled'),
     'texture_preloading': ('texture_preloading', {'none': '0', 'partial': '1', 'full': '2'}, 'full'),
     'deinterlace': ('deinterlace_mode', {'automatic': '0', 'off': '1', 'weave-tff': '2', 'weave-bff': '3',
@@ -493,7 +508,8 @@ ENUM_EXPECTED = {
     'cas_mode': ('CASMode', {'off': '0', 'sharpen-only': '1', 'sharpen-and-resize': '2'}, 'off'),
     'tv_shader': ('TVShader', {'none': '0', 'scanline': '1', 'diagonal': '2', 'triangular': '3', 'wave': '4',
                                'lottes-crt': '5', 'rgss-4x': '6', 'agss-nx': '7'}, 'none'),
-    'performance_mode': ('HWDownloadMode', {'accurate': '0', 'no-readbacks': '2'}, 'accurate'),
+    'hw_download_mode': ('HWDownloadMode', {'accurate': '0', 'enabled-force-full': '1', 'no-readbacks': '2',
+                                            'unsynchronized': '3', 'disabled': '4'}, 'accurate'),
     'osd_messages_pos': ('OsdMessagesPos', {'none': '0', 'top-left': '1', 'top-center': '2', 'top-right': '3',
                                             'center-left': '4', 'center': '5', 'center-right': '6',
                                             'bottom-left': '7', 'bottom-center': '8', 'bottom-right': '9'},
@@ -555,12 +571,13 @@ class ResolvedValueTests(unittest.TestCase):
         self.assertEqual(by_id()['adapter']['default'], '')
 
     def test_hardware_readback_mapping(self):
-        choices = {choice['name']: choice for choice in by_id()['performance_mode']['choices']}
+        choices = {choice['name']: choice for choice in by_id()['hw_download_mode']['choices']}
         self.assertEqual(choices['accurate']['ini'], '0')
         self.assertEqual(choices['no-readbacks']['ini'], '2')
+        self.assertEqual(choices['unsynchronized']['ini'], '3')
         self.assertEqual(choices['no-readbacks']['status'], 'ok')
-        self.assertEqual(gs_settings.ini_value(by_id()['performance_mode'],
-                                               gs_settings.parse_value(by_id()['performance_mode'],
+        self.assertEqual(gs_settings.ini_value(by_id()['hw_download_mode'],
+                                               gs_settings.parse_value(by_id()['hw_download_mode'],
                                                                        'no-readbacks')), '2')
 
     def test_resolved_rows_are_not_settable_or_offered(self):
@@ -575,7 +592,7 @@ class ResolvedValueTests(unittest.TestCase):
         # TASK-088 (1.2.0): every gt4-gs value the binary accepts is offered.
         self.assertEqual(gs_settings.offered_choices(by_id()['deinterlace'])[0], 'automatic')
         self.assertEqual(len(gs_settings.offered_choices(by_id()['deinterlace'])), 10)
-        self.assertEqual(gs_settings.offered_choices(by_id()['blending']), ['minimum', 'basic', 'medium', 'high', 'full', 'maximum'])
+        self.assertEqual(gs_settings.offered_choices(by_id()['blending']), ['high', 'minimum'])
         self.assertEqual(gs_settings.offered_choices(by_id()['graphics_api']), ['auto', 'vulkan', 'd3d12', 'd3d11'])
 
     def test_resolved_values_stay_out_of_the_default_ini(self):
@@ -599,11 +616,9 @@ class ResolvedValueTests(unittest.TestCase):
 class PageLayoutTests(unittest.TestCase):
     def test_graphics_page_is_basic_only(self):
         basic = [row['id'] for row in rows() if row['page'] == 'basic']
-        # TASK-180 test5: Performance Mode left the page (hidden, driven by the flare toggle); the two effect toggles replace it.
-        # TASK-180 test5: Performance Mode left the page (hidden, driven by the flare toggle); the two
-        # effect toggles replace it, after the Graphics API row in the table.
-        self.assertEqual(basic, ['gs_engine', 'graphics_api', 'effect_flares', 'effect_road_sheen',
-                                  'fxaa', 'cas_mode', 'cas_sharpness', 'texture_load'])
+        # TASK-186: the old Performance Mode row is gone; its items are rows of their own, the two GSdx-only settings last.
+        self.assertEqual(basic, ['gs_engine', 'graphics_api', 'effect_flares', 'effect_road_sheen', 'blending',
+                                 'hw_download_mode', 'fxaa', 'cas_mode', 'cas_sharpness', 'texture_load'])
         upscale = by_id()['upscale']
         self.assertEqual((upscale['control'], upscale['type'], upscale['default']), ('dropdown', 'enum', '1080p'))
         # TASK-080 addendum (owner, 2026-10-21): hidden, always written, set by the launcher from the display plan;

@@ -40,8 +40,9 @@ class ConfigTests(unittest.TestCase):
     def test_defaults_are_vulkan_3x_high_blending_automatic_deinterlace_16_9_vsync(self):
         text = probe.gs_config_text({})
         self.assertEqual(text.splitlines()[1:], [
-            '[EmuCore/GS]', 'Renderer = 14', 'upscale_multiplier = 3', 'accurate_blending_unit = 3',
+            '[EmuCore/GS]', 'Renderer = 14', 'upscale_multiplier = 3',
             'deinterlace_mode = 0', 'AspectRatio = 16:9', 'VsyncEnable = true', 'DisableMailboxPresentation = true',
+            'accurate_blending_unit = 3',  # TASK-186: the blending row sits after the effect toggles now
             'HWDownloadMode = 0', 'OsdShowFPS = false', 'OsdShowGPU = false', 'OsdShowResolution = false',
             'LoadTextureReplacements = true', 'LoadTextureReplacementsAsync = true', '', '[GT4GS]',
             'ProhibitDynamicCode = false'])  # slice194 (TASK-037): readback mode accurate by default; TASK-064: ACG off

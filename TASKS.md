@@ -3475,6 +3475,14 @@ keeps the exact TASK-182 savings and adds the Performance Mode split, and Spec I
   `GAME`); the launcher's Play uses the game's own ELF and `GT4_BENCH_GAME=spec2` is no longer refused. The boot test in
   the emulator could not run: the only Spec II images on this PC are PTBR builds whose ISO hash does not match the pin
   (`docs/inputs/spec2-iso.json`).
+- **Test5 Spec II follow-up (TASK-180b, 2026-11-06):** two pieces the Windows build splices and the Android build did not.
+  (1) `android/native/CMakeLists.txt` never compiled the Spec II runtime capsule's `iop/sif.cpp` (the TASK-100 S7b
+  asynchronous FILEIO server), so the game stopped at the `dev9x:` devctl after `INETCTL.IRX`: black picture and ~1 s per
+  guest frame inside `run_due_events`. (2) It never defined `GT4_TARGET_SPEC2`, so the Spec II library ran the **v2.00**
+  guest addresses of every host hook and stopped after the publisher screens repeating seven GIF records. Both are now set
+  by the Android CMake (`sif.cpp` spliced and pinned, `GT4_TARGET_SPEC2` defined, only `v200`/`spec2` accepted at all);
+  with them Spec II plays its opening and reaches its title flow in the emulator. See `docs/STATUS.md` and the 2026-11-06
+  journal for the full Windows/Android splice table.
 - **Unified-memory phase 2 is cancelled for this build** (owner pause).
 
 **One app (owner, same day; APK rebuilt as `1.3.0-android-test3`):** the game runs in the launcher's own task

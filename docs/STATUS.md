@@ -62,7 +62,39 @@ The private ARMSX2 GS work now has its own source-only repository, `moesuito/gt4
 - **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionCode **103001502**, 227,015,104 bytes, sha256
   `b86066309d52f093864f49af9c01052b6f33e8a1dfb6c65f5c6fe32ab1207c32`, owner's release key, with `libgt4`,
   `libgt4spec2` and `libgt4gs` in `symbols/`. The second library adds ~83 MB to the APK.
+## TASK-180b: Spec II on Android — the black picture and the 3.2 s frames were the missing S7b IOP rule (2026-11-06)
 
+Spec II in the emulator stayed black with `gif bytes/frame: path1=0 path2=0 path3=0` and `run_due_events=3248 ms/frame`.
+The Android build of `libgt4spec2.so` never had the TASK-100 S7b asynchronous FILEIO server:
+
+- **Cause (Confirmed).** `native/CMakeLists.txt` splices the Spec II capsule's `iop/sif.cpp` (the DNAS310.IMG reboot selects
+  the asynchronous FILEIO server, whose devctl completes with the 0x80000011 packet) into the Windows build;
+  `android/native/CMakeLists.txt` never did. The Android Spec II library ran the donor's synchronous server, the game's
+  fileio thread waited for ever on the `dev9x:` devctl after `IRX\INETCTL.IRX`, and the boot stopped before drawing.
+  Evidence: the PC log prints `[sif] DNAS310.IMG is a Sony IOP reboot image (LOADFILE 3100): asynchronous FILEIO server`
+  and `[fileio] devctl dev9x: 0x4401`, the Android log neither; `b"asynchronous FILEIO server"` appears 0 times in the
+  test5 library and 1 time once the capsule's sif.cpp is spliced.
+- **Fix.** The Android CMake now requires a Spec II capsule with `sif.cpp`, verifies it against the capsule pin and compiles
+  it in place of the donor's `iop/sif.cpp`; a Spec II configure without it fails with a message naming the file. The v2.00
+  Android build is untouched (the block is `GT4_TARGET STREQUAL "spec2"`).
+- **Proof.** After the fix Spec II draws the Sony and Polyphony screens (313,904 B/frame of GIF, 24-34 VBlanks/s at 2x);
+  before it produced no GIF at all. It then repeats the same seven records without leaving those screens, a second
+  Android-only stall that is not isolated yet (the owner's S23 moves through the same phase when booting v2.00).
+- **Measurements kept.** Five F8 run-loop categories (`runloop_mtvu_pump`, `runloop_sif_pump`, `runloop_events`,
+  `vblank_action`) in the `[frame] run loop` line, a `gs_drain` scope around the journal drain in `mtvu::pump()`, and
+  `GT4_GS_PRESENT_LOG` (flush/next_frame/present per VBlank; a present costs ~1 s on this emulator).
+- **Second cause (Confirmed, same day): the Android build never defined `GT4_TARGET_SPEC2`.** `native/CMakeLists.txt` has
+  set it since TASK-100 S3; without it the Spec II library ran the **v2.00** guest addresses of every host hook, so the
+  16:9 hold, the 480p hold and the display-request reader found nothing (`[display] game-data pointer ... -> 0xFFB30018`
+  against the PC's `0x009BD690`) and the game stopped after the publisher screens, repeating seven GIF records. The
+  Android CMake now sets the definition when `GT4_TARGET=spec2`, right after the check that only `v200` and `spec2` are
+  accepted, and `native/game_target.hpp`'s Spec II row is what runs. Proof: the pointer line now reads
+  `0x009BD910 at vblank 12` with the 480p index written at `0x009BF6A8`, the seven-record loop ends, the opening movie
+  plays at 20-24 VBlanks/s and the **Spec II title screen** appears (`Modo Arcade` / `Modo Gran Turismo`, `v1.10`).
+  v2.00 on the same emulator reaches its own title screen (`Arcade Mode` / `Gran Turismo Mode`).
+- **Gates.** CTest 324/324 (1 skipped), Python 802 OK (48 skipped) for the shared code of the first pass; the second fix
+  touches `android/native/CMakeLists.txt` only and the v2.00 Android configure enters neither Spec II block. v2.00 on the
+  same emulator, through the same launch contract, plays its opening at 22.8 VBlanks/s.
 ## Android test5: effect toggles replace Performance Mode; Spec II ships (TASK-180, 2026-11-06)
 
 The CoreGS 2.0 optimisation work is paused by the owner (2026-11-06); this build keeps the exact TASK-182 savings and
