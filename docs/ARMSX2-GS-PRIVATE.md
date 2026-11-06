@@ -301,6 +301,27 @@ logs "cells 10x19 for 16 px"), padding `floor(line/2)`, 36 columns and the 12 px
 (`build/evidence/t180-rc15c/21-hud-side-by-side.png`, cropped from `06-coregs-hud.png` and `10-armsx2-hud.png` at
 2400x1080) lines the two panels up line for line: same monospace face, same size, same line height, same column positions.
 
+### Spec II: the black picture is the game, not the GS side
+
+Round 4 left Spec II black with ARMSX2. Round 5 ran both renderers in the same emulator session (avd-b, Lavapipe,
+2400x1080):
+
+- **v2.00 control, ARMSX2 Vulkan:** the game reaches its memory-card dialog and the picture is there
+  (`build/evidence/t180-rc15c/10-armsx2-hud.png`); the GS stream is 264,798 bytes/frame at VSync 300.
+- **Spec II, ARMSX2 Vulkan:** black after 100 s (`14-spec2-armsx2.png`); the stream is **605 bytes/frame** at VSync 300
+  and 2,429 bytes/frame at VSync 1200 — the VSync heartbeat only, no GIF records.
+- **Spec II, CoreGS 2.0:** black too (`20-spec2-coregs.png`), FPS `--`, and its log repeats
+  `[core2] ... fragments=0 prims=0` — CoreGS sees no primitives. (v2.00 under CoreGS is black in this emulator as well:
+  CoreGS never presents a frame on Lavapipe here, so it cannot be the working reference.)
+- **Game side:** the F7/F8 report shows `[frame] gif bytes/frame: path1=0 path2=0 path3=0`, `primitives/frame=0.0` and
+  `EE frame wall=3255 ms` with `run_due_events=3248 ms/frame`: each guest frame spends ~3.2 s in event handling and
+  emits no GIF at all. The game is crawling through its early boot under the emulator's ARM translation and has nothing
+  to draw yet.
+
+So the cause is not the ARMSX2 side (serial `SCUS-97436` is passed and used, the CRC and GameDB fixes load, Vulkan opens):
+there are no primitives for either renderer. No game-library fix was made — this is the emulator host, not an
+Android-side bug of ours. On the phone the v2.00 build already runs; Spec II still needs an owner test.
+
 ### No-JIT: the guest recompilers are gone from the link
 
 Round 4 only made them unreachable. Round 5 removes them from the library:
