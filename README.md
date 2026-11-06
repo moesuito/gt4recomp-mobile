@@ -55,6 +55,29 @@ The full, maintained recipes are in [docs/BUILD.md](docs/BUILD.md), [docs/EE-PRO
 - The **ARMSX2 GS** renderer here is built with `GT4GS_NO_JIT`: it generates no code at run time. It is an extra
   renderer, not the supported default.
 
+## GPU support
+
+The ARMSX2 GS chooses and tunes for the GPU itself; the launcher does not write these rules. With **Auto** (the default)
+it picks the API, and its per-model tables and driver database do the rest:
+
+- **API:** Vulkan on Adreno, on Mali Valhall v9 and v11, on SoCs its database prefers Vulkan (MT6897), and on any GL
+  driver that cannot read the render target in tile memory; OpenGL ES elsewhere (other Mali, PowerVR, Xclipse and
+  unknown drivers). An explicit OpenGL ES or Vulkan choice in the graphics API row still wins.
+- **Per-model tuning:** Adreno (2xx to 8xx and X, 53 parts), Mali (Utgard to G1, 40 parts, scaled by core count) and
+  PowerVR (B-, C- and D-Series) tables set the texture and render-target pool sizes and ages. Internal; no ini key.
+- **Driver bugs:** 35 rules keyed on API, vendor, driver (Arm's blob, Mesa PanVK, Qualcomm, Mesa Turnip, Imagination/
+  Mesa PowerVR, ANGLE), version, Android SDK and SoC. They select workarounds such as a render-target copy for
+  feedback, cached or staged readbacks, shader serialization, dynamic-rendering and imageless fallbacks, a stencil-less
+  depth path, FIFO present and swapchain width alignment.
+- **Xclipse:** Auto keeps OpenGL ES (its Vulkan has no working framebuffer fetch); a forced Vulkan session takes the
+  render-target-copy self-read road.
+- **Generic fallbacks:** an unknown GPU or driver gets the conservative tuning (96 pooled targets and textures) and the
+  Android shader-serialization rules.
+
+Tested here: the Adreno 740 on the owner's Galaxy S23 (CoreGS 2.0 and GSdx (ARMSX2)) and the Android emulator
+(Lavapipe Vulkan). Mali, PowerVR, Xclipse and Turnip are handled by the driver database but have not been tested by
+this project.
+
 ## Maintenance
 
 - **GT4Recomp updates:** add this repository's `upstream` remote (the main repository), `git fetch upstream`, merge and
