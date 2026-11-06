@@ -2,7 +2,7 @@
 
 The private ARMSX2 GS work now has its own source-only repository, `moesuito/gt4recomp-mobile` (GPL-3.0-or-later):
 
-- **Tracked import.** ARMSX2 at `1049db37fb` lives in `third_party/armsx2/` (7,200 files, about 120 MiB): `common`,
+- **Tracked import.** ARMSX2 at `1049db37fb` lives in `third_party/armsx2/` (7,225 files, 118.7 MiB): `common`,
   `pcsx2`, the 30 Android 3rdparty trees, the CMake modules, the shaders/fonts/GameIndex and the GPL text. No Qt/iOS/
   prebuilt trees, no sample trees, no file over 50 MB. The import is two commits (pristine, then the round 1-5 patches),
   documented in `docs/ARMSX2-GS-IMPORT.md`.

@@ -26,7 +26,7 @@ sources and prebuilt `jniLibs/`, `updater/`, `tests/`, `tools/`, the SDL3 and Ob
 third-party trees (`vixl`, `zydis`, `xbyak`, `adrenotools`, `librashader`, `raininterface`, `miniupnpc`, `promptfont`,
 the Windows-only ones), libwebp's JS, SWIG and Gradle extras (including its prebuilt jars) and every file over 50 MB.
 
-Approximate size of the import: **7,200 files, about 120 MiB**, largest file 3.6 MiB.
+Size of the import at this commit: **7,225 files, 118.7 MiB**, largest file 2.64 MiB.
 
 The shader compiler sources (`shaderc`'s dependencies) are **not** committed. shaderc itself ships inside ARMSX2's tree;
 its `third_party/` dependencies are fetched by `tools/fetch_armsx2_shader_deps.py` at the revisions its `DEPS` file
