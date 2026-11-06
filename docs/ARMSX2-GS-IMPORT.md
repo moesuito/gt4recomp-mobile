@@ -24,7 +24,7 @@ Not imported, because the Android GS library neither compiles nor ships them: `.
 (`pcsx2-qt/`, `pcsx2-sdl/`, `pcsx2-libretro/`, `pcsx2-*-runner/`), `platforms/ios/`, the Android app's Java/Kotlin
 sources and prebuilt `jniLibs/`, `updater/`, `tests/`, `tools/`, the SDL3 and Oboe sample/test trees, the unused
 third-party trees (`vixl`, `zydis`, `xbyak`, `adrenotools`, `librashader`, `raininterface`, `miniupnpc`, `promptfont`,
-the Windows-only ones) and every file over 50 MB.
+the Windows-only ones), libwebp's JS, SWIG and Gradle extras (including its prebuilt jars) and every file over 50 MB.
 
 Approximate size of the import: **7,200 files, about 120 MiB**, largest file 3.6 MiB.
 
