@@ -1,8 +1,8 @@
 # Private test build: ARMSX2's GS inside the GT4Recomp Android app (owner's phone only)
 
-Status: 2026-11-06 (1.3.0-rc15, round 4), **PRIVATE and PCSX2-tainted, GPL-3.0+**. Never distributed, never merged,
-never pushed. **The GS in this build has no JIT:** no run-time machine code is generated and no executable code memory is
-mapped (build flag `GT4GS_NO_JIT`). This clone
+Status: 2026-11-06 (1.3.0-rc15, round 5), **PRIVATE and PCSX2-tainted, GPL-3.0+**. Never distributed, never merged,
+never pushed. **The GS in this build has no JIT:** no run-time machine code is generated, no executable code memory is
+mapped and the ARM64 guest recompilers are not even linked (build flag `GT4GS_NO_JIT`). This clone
 (`gt4-private-armsx2gs`, branch `private/armsx2-gs-s23`) has its push URL disabled on purpose.
 
 ## What it is
@@ -285,6 +285,37 @@ second library (143,919,214 to 226,998,720 before the FSR row, 227,015,104 final
 `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionName `1.3.0-rc15`, versionCode **103001502**, owner's release key,
 **227,015,104 bytes**, sha256 `b86066309d52f093864f49af9c01052b6f33e8a1dfb6c65f5c6fe32ab1207c32`, `symbols/` with
 `libgt4`, `libgt4spec2` and `libgt4gs` unstripped. Screenshots: `build/evidence/t180-rc15b/` (ignored).
+
+
+## Round 5 (owner, 2026-11-06): the HUD's font and size, the Spec II picture, the no-JIT link
+
+### The HUD is CoreGS 2.0's panel, font included
+
+Round 4 matched the lines, colours and graph but the ARMSX2 panel's text was smaller and proportional: PCSX2's ImGui loads
+its fixed font from `<resources>/fonts/RobotoMono-Medium.ttf`, and the Play-time asset copy did not ship that folder, so
+`AddFixedFont()` fell back to the proportional Roboto standard font. `android/stage-armsx2gs.cmd` now stages the whole
+`bin/resources/fonts` tree (RobotoMono-Medium, Roboto-Regular and the icon fonts) into the APK assets, and the launcher
+already extracts `armsx2gs/resources` on every Play. The HUD's layout uses CoreGS's own metrics: font size
+`clamp(round(window/1080*16), 12, 44)` px, line box `size * 19/16` (the system monospace cell is 19 px at 16, as CoreGS
+logs "cells 10x19 for 16 px"), padding `floor(line/2)`, 36 columns and the 12 px margin. The new side-by-side
+(`build/evidence/t180-rc15c/21-hud-side-by-side.png`, cropped from `06-coregs-hud.png` and `10-armsx2-hud.png` at
+2400x1080) lines the two panels up line for line: same monospace face, same size, same line height, same column positions.
+
+### No-JIT: the guest recompilers are gone from the link
+
+Round 4 only made them unreachable. Round 5 removes them from the library:
+- `pcsx2/CMakeLists.txt` does not append `pcsx2arm64Sources` under `GT4GS_NO_JIT`, so the EE/IOP/microVU/VIF/VU-AOT emitters
+  and vixl are never compiled or linked;
+- `pcsx2/GT4GSNoJitStubs.cpp` (generated from `R5900OpcodeTables.h` by the build round) closes the opcode tables' 272
+  `rec*` entry points plus `dVifUnpack<0/1>`, `dVifReset`, `SaveStateBase::vuJITFreeze`, `eeDivideSignificandArm64` and
+  the six `vuAot*` reporters, all empty and unreachable;
+- `VMManager` initializes no provider and selects the interpreters; `vtlb_BackpatchLoadStore` answers false; `EECycleRate`
+  skips the recompiler patching.
+
+Proof on the final library: `llvm-nm -C --defined-only libgt4gs.so` reports **0 `vixl::` symbols** and **0**
+`recCpu`/`psxRec`/`recRecompile`/`ioRecRecompile`/`microVU` entries (before: 9,212 vixl symbols). The game still boots and
+renders on the emulator (v2.00 through Vulkan, below), and the log keeps the line
+`[gt4gs] no JIT: GT4GS_NO_JIT build; executable code memory absent`.
 
 ## Logging
 
