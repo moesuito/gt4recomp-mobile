@@ -1,14 +1,14 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Gran Turismo 4",
-  "version": "1.3.0-android-test4-armsx2gs-private",
+  "version": "1.3.0-rc15",
   "bundle": {
     "icon": [
       "icons/icon.png"
     ],
     "android": {
       "minSdkVersion": 29,
-      "versionCode": 4
+      "versionCode": 103001501
     }
   }
 }

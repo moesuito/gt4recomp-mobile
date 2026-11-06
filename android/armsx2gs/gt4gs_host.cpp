@@ -147,6 +147,26 @@ bool ApplyIniFile(const char *path, bool report_missing) {
   return true;
 }
 
+// The textures folder and the replacement pack under it, in game.log. The ARMSX2 GS reads PCSX2's layout
+// (`<textures>/<serial>/replacements`, GSTextureReplacements::GetGameTextureDirectory), so this line is the proof that
+// the pack the player picked on the phone (copied once into the app's folders by the launcher) arrived; the count is
+// every file under the replacements folder, recursively.
+void LogTextureReplacements() {
+  const bool loading = s_settings.GetBoolValue("EmuCore/GS", "LoadTextureReplacements", false);
+  const std::string game_folder = Path::Combine(EmuFolders::Textures, s_serial);
+  const std::string replacements = Path::Combine(game_folder, "replacements");
+  FileSystem::FindResultsArray files;
+  const bool found = FileSystem::FindFiles(
+      replacements.c_str(), "*", FILESYSTEM_FIND_FILES | FILESYSTEM_FIND_HIDDEN_FILES | FILESYSTEM_FIND_RECURSIVE, &files);
+  if (found) {
+    LogLine("textures: folder %s, loading %s, %zu replacement files under %s", EmuFolders::Textures.c_str(),
+            loading ? "on" : "off", files.size(), replacements.c_str());
+  } else {
+    LogLine("textures: folder %s, loading %s, no replacements folder under %s", EmuFolders::Textures.c_str(),
+            loading ? "on" : "off", replacements.c_str());
+  }
+}
+
 void ApplyBaseSettings() {
   // The Windows launcher's own values for the PCSX2 GS (docs/GS-SETTINGS.md), then the game's session file, then the
   // owner's extra lines.
@@ -599,6 +619,11 @@ int gt4gs_start(const Gt4gsStartInfo *info) {
 
   ApplyIniFile(s_config_path.c_str(), false);
   ApplyIniFile(s_overrides_path.c_str(), false);
+
+  // Both files are applied after the folders were read, and they name the textures folder the GS loads replacements
+  // from: read the folders again, then log the pack so game.log shows what the player picked on the phone.
+  EmuFolders::LoadConfig(s_settings);
+  LogTextureReplacements();
 
   // A build without Vulkan always runs the GLES back end (ARMSX2's own Android default); the setting is written so the
   // library's choice is visible in the log and in the shared settings file.

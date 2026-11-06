@@ -188,9 +188,9 @@
   "choice.language.en-US": "English",
   "choice.language.pt-BR": "Português (Brasil)",
   "setting.renderer.label": "Renderer",
-  "setting.renderer.help": "CoreGS 2.0 is our own renderer and the recommended one: it is part of the game and uses much less processor. ARMSX2 GS (experimental, private build) runs the ARMSX2 emulator's GS inside the game, for comparison: it is experimental and may show glitches.",
-  "choice.renderer.coregs20": "CoreGS 2.0 (recommended)",
-  "choice.renderer.armsx2": "ARMSX2 GS (experimental, private build)",
+  "setting.renderer.help": "GSdx (ARMSX2) runs the ARMSX2 emulator's GS inside the game and is the default of this private build. CoreGS 2.0 is our own renderer and the second choice, with a much lower processor cost.",
+  "choice.renderer.coregs20": "CoreGS 2.0",
+  "choice.renderer.armsx2": "GSdx (ARMSX2)",
   "setting.vsync.help_coregs20": "On keeps motion smooth with no tearing. Off lowers latency and may tear.",
   "settings.gsdx_title": "Download GSdx?",
   "settings.gsdx_text": "GSdx is not on this PC yet. It is an optional renderer, downloaded from the internet. If you cancel, CoreGS 2.0 stays selected.",
@@ -227,8 +227,6 @@
   "choice.graphics_card.auto": "Automatic (best)",
   "setting.render_scale.label": "Render scale",
   "setting.render_scale.help": "How sharp the picture is drawn. 100% draws it at least at your resolution (taken from the Resolution setting on the Display page); 50% is faster and softer, 200% is sharper and needs a much faster GPU. The number next to the slider is the resulting internal resolution.",
-  "setting.armsx2_scale.label": "ARMSX2 GS resolution",
-  "setting.armsx2_scale.help": "Only for the ARMSX2 GS: the internal resolution multiplier. 1.25x to 1.75x and 2.5x are fractional scales and need a graphics driver that supports them. Your own extra GS lines go into armsx2-gs-extra.ini, beside armsx2-gs.ini in the app's files folder.",
   "setting.armsx2_api.label": "ARMSX2 GS graphics API",
   "setting.armsx2_api.help": "OpenGL ES is the API the ARMSX2 GS uses on Android by default: it is the one ARMSX2 keeps supported there. Vulkan is experimental: ARMSX2 keeps it out of its Android renderer choice because of blending bugs, and this private build may not carry it at all (the game log then says so and stays on OpenGL ES).",
   "choice.armsx2_api.ogl": "OpenGL ES",
@@ -956,5 +954,8 @@
   "rust.wheel.game_running": "The game is running: close it to change the wheel's controls or test the force.",
   "rust.wheel.newer_file": "The wheel file was written by a newer GT4Recomp and is kept as it is. Update the launcher to change it.",
   "rust.wheel.could_not_save": "The wheel settings could not be saved: {error}",
-  "rust.wheel.unknown_template": "There is no wheel template named {name}."
+  "rust.wheel.unknown_template": "There is no wheel template named {name}.",
+  "setting.armsx2_textures.label": "Custom textures",
+  "setting.armsx2_textures.help": "Load texture packs with the ARMSX2 GS from the folder chosen below (the same packs and the same PCSX2 folder layout as on the PC: the game's serial folder with its replacements folder). Off uses the game's own textures. Your own extra GS lines go into armsx2-gs-extra.ini, beside armsx2-gs.ini in the app's files folder.",
+  "settings.textures_current_custom": "Textures folder: {name} (chosen on this phone)"
 }

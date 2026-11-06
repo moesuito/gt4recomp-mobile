@@ -424,10 +424,15 @@ pub fn armsx2_paths(external: &std::path::Path) -> Armsx2Paths {
 }
 
 /// The armsx2-gs.ini text of a session: the Windows launcher's own base settings (`gs_config_text`: the same table, the
-/// same blending accuracy, aspect, OSD and folder rows) with the ARMSX2 resolution multiplier from the `armsx2_scale` row
-/// instead of the CoreGS/GSdx plan's integer one. A fractional multiplier needs `ExtendedUpscalingMultipliers`, so that
-/// key is added where the row is fractional.
-pub fn armsx2_config_text(settings: &Settings, paths: &Armsx2Paths, textures: &std::path::Path) -> Result<String, String> {
+/// same blending accuracy, aspect, OSD and folder rows) with the internal-resolution multiplier taken from the shared
+/// Render scale row and the screen, snapped to what the ARMSX2 GS accepts (whole, or fractional 1.25x .. 1.75x). A
+/// fractional multiplier needs `ExtendedUpscalingMultipliers`, so that key is added where the result is fractional.
+pub fn armsx2_config_text(
+    settings: &Settings,
+    paths: &Armsx2Paths,
+    textures: &std::path::Path,
+    display: Option<&DisplayTarget>,
+) -> Result<String, String> {
     let gs_paths = Pcsx2Paths {
         executable: paths.root.join("libgt4gs.so"),
         executable_sha256: String::new(),
@@ -437,9 +442,11 @@ pub fn armsx2_config_text(settings: &Settings, paths: &Armsx2Paths, textures: &s
         textures: textures.to_path_buf(),
     };
     let mut text = gs_config_text(settings, &gs_paths, None, false)?;
-    let scale = settings.get("armsx2_scale");
-    let scale = if scale.is_empty() { "1" } else { scale };
-    // The multiplier is the row's own value (fractional allowed), not the integer the display plan computes.
+    // The same rule as the PC's GSdx: the Render scale is a percentage of the screen's height over the game's 448
+    // lines. On the phone it lands between two whole multipliers, so it becomes the nearest one ARMSX2 can use
+    // (1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x, 3x, 4x, 5x, 6x); a fractional one turns ExtendedUpscalingMultipliers on.
+    let multiplier = armsx2_multiplier(settings, display);
+    let scale = format_multiplier(multiplier);
     text = text
         .lines()
         .map(|line| {
@@ -449,6 +456,12 @@ pub fn armsx2_config_text(settings: &Settings, paths: &Armsx2Paths, textures: &s
                 } else {
                     format!("upscale_multiplier = {scale}")
                 }
+            } else if line.trim_start().starts_with("LoadTextureReplacements")
+                && !line.trim_start().starts_with("LoadTextureReplacementsAsync")
+            {
+                // The "Custom textures" row owns loading on the phone: the CoreGS rows (and their texture_load value) are
+                // hidden while the ARMSX2 GS runs, so the table's line is replaced by this row's (owner, 2026-11-06).
+                format!("LoadTextureReplacements = {}", settings.is_on("armsx2_textures"))
             } else {
                 line.to_string()
             }
@@ -489,6 +502,51 @@ pub fn armsx2_config_text(settings: &Settings, paths: &Armsx2Paths, textures: &s
     Ok(text)
 }
 
+/// The internal-resolution multipliers the ARMSX2 GS accepts with `ExtendedUpscalingMultipliers` on. The Render scale
+/// row lands between two of them on a phone screen; the nearest one is used.
+pub const ARMSX2_MULTIPLIERS: [f32; 10] = [1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0];
+
+/// The multiplier nearest to `wanted` among [`ARMSX2_MULTIPLIERS`] (ties go to the smaller one, so rounding never
+/// grows the internal resolution behind the player's back).
+pub fn armsx2_snap_multiplier(wanted: f32) -> f32 {
+    let mut best = ARMSX2_MULTIPLIERS[0];
+    let mut best_distance = f32::MAX;
+    for candidate in ARMSX2_MULTIPLIERS {
+        let distance = (candidate - wanted).abs();
+        if distance < best_distance || (distance == best_distance && candidate < best) {
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+    best
+}
+
+/// The internal-resolution multiplier of a session: the PC's Render scale rule (the percentage of the screen's height
+/// over the game's 448 lines) snapped to what the ARMSX2 GS can use. No screen known falls back to the PC's 1920x1080.
+pub fn armsx2_multiplier(settings: &Settings, display: Option<&DisplayTarget>) -> f32 {
+    let percent = settings
+        .get("render_scale")
+        .parse::<u32>()
+        .unwrap_or(display::RENDER_SCALE_DEFAULT);
+    let output = display.map(|target| target.output).unwrap_or(display::FALLBACK_OUTPUT);
+    let height = output.height.min(output.width);
+    if height == 0 {
+        return 1.0;
+    }
+    let wanted = percent as f32 * height as f32 / (100.0 * display::NATIVE_FRAME_HEIGHT as f32);
+    armsx2_snap_multiplier(wanted)
+}
+
+/// `2` for a whole multiplier, `2.5` for a fractional one: what the ini and the row's label show.
+pub fn format_multiplier(multiplier: f32) -> String {
+    if (multiplier - multiplier.round()).abs() < 0.001 {
+        format!("{}", multiplier.round() as i64)
+    } else {
+        let text = format!("{multiplier:.2}");
+        text.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
 /// The `[EmuCore/GS]` lines of the ARMSX2 GS picture options: FXAA, CAS (mode and amount), texture filtering,
 /// anisotropic filtering and dithering, each from its launcher row. The values are the ones PCSX2's own settings
 /// file uses; the owner's extra file still overrides them, because the library applies it after this file.
@@ -514,6 +572,10 @@ pub fn armsx2_effect_lines(settings: &Settings) -> Vec<String> {
     };
     vec![
         format!("fxaa = {}", settings.is_on("armsx2_fxaa")),
+        // The table's hidden texture_load_async row already writes LoadTextureReplacementsAsync (on), so only the
+        // preloading switch of the ARMSX2 GS is added here: the owner asked for it with the pack (2026-11-06), and it
+        // follows the Custom textures row.
+        format!("PrecacheTextureReplacements = {}", settings.is_on("armsx2_textures")),
         format!("CASMode = {}", if settings.is_on("armsx2_cas") { 1 } else { 0 }),
         format!("CASSharpness = {}", strength.min(100)),
         format!("filter = {filter}"),

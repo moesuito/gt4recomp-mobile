@@ -86,8 +86,8 @@ pub const ARMSX2_GS: &str = "armsx2";
 
 const RENDERER_CHOICES: &[Choice] = &[
     Choice { value: PCSX2_GS, label: "GSdx", selectable: true },
-    Choice { value: CORE_GS_20, label: "CoreGS 2.0 (recommended)", selectable: true },
-    Choice { value: ARMSX2_GS, label: "ARMSX2 GS (experimental, private build)", selectable: true },
+    Choice { value: CORE_GS_20, label: "CoreGS 2.0", selectable: true },
+    Choice { value: ARMSX2_GS, label: "GSdx (ARMSX2)", selectable: true },
 ];
 
 /// The ARMSX2 GS resolution multipliers (private Android test build): whole and fractional scales. PCSX2 applies a
@@ -231,21 +231,19 @@ pub const SETTINGS: &[SettingDef] = &[
         page: Page::Graphics,
         group: "Renderer",
         title: "Renderer",
-        info: "CoreGS 2.0 is our own renderer and the recommended one: it is part of the game and uses much less processor. \n               ARMSX2 GS (experimental, private build) runs the ARMSX2 emulator's GS inside the game, for comparison: it is \n               experimental and may show glitches.",
+        info: "GSdx (ARMSX2) runs the ARMSX2 emulator's GS inside the game and is the default of this private build. \n               CoreGS 2.0 is our own renderer and the second choice, with a much lower processor cost.",
         kind: Kind::Choice(RENDERER_CHOICES),
         default: PCSX2_GS,
         connected: true,
     },
     SettingDef {
-        id: "armsx2_scale",
+        id: "armsx2_textures",
         page: Page::Graphics,
         group: "ARMSX2 GS",
-        title: "ARMSX2 GS resolution",
-        info: "Only for the ARMSX2 GS renderer (private test build): the internal resolution multiplier. Fractional \
-               values (1.25x to 1.75x) and 2.5x need a graphics driver that supports them. Extra GS lines the player adds \
-               go into armsx2-gs-extra.ini, beside armsx2-gs.ini in the app's files folder.",
-        kind: Kind::Choice(ARMSX2_SCALE_CHOICES),
-        default: "2",
+        title: "Custom textures",
+        info: "Load texture packs for the ARMSX2 GS from the launcher's textures folder (the same folder and packs as                on the PC). Off uses the game's own textures.",
+        kind: Kind::Toggle,
+        default: "on",
         connected: true,
     },
     SettingDef {

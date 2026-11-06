@@ -15,7 +15,7 @@ fn set(pairs: &[(&str, &str)]) -> Settings {
 fn the_defaults_are_the_ones_the_private_build_ships() {
     let settings = Settings::default();
     assert_eq!(settings.get("armsx2_api"), "ogl", "OpenGL ES is the default API");
-    assert_eq!(settings.get("armsx2_scale"), "2", "2x is the private build's default on the S23");
+    assert_eq!(settings.get("armsx2_textures"), "on", "the pack is loaded unless the player turns it off");
     assert_eq!(settings.get("armsx2_fxaa"), "off");
     assert_eq!(settings.get("armsx2_cas"), "off");
     assert_eq!(settings.get("armsx2_cas_strength"), "50");
@@ -29,7 +29,7 @@ fn each_row_maps_to_the_armsx2_gs_setting_it_controls() {
     let defaults = launch::armsx2_effect_lines(&Settings::default()).join("\n");
     assert_eq!(
         defaults,
-        "fxaa = false\nCASMode = 0\nCASSharpness = 50\nfilter = 2\nMaxAnisotropy = 0\ndithering_ps2 = 2"
+        "fxaa = false\nPrecacheTextureReplacements = true\nCASMode = 0\nCASSharpness = 50\nfilter = 2\nMaxAnisotropy = 0\ndithering_ps2 = 2"
     );
 
     let tuned = launch::armsx2_effect_lines(&set(&[
@@ -43,7 +43,7 @@ fn each_row_maps_to_the_armsx2_gs_setting_it_controls() {
     .join("\n");
     assert_eq!(
         tuned,
-        "fxaa = true\nCASMode = 1\nCASSharpness = 70\nfilter = 0\nMaxAnisotropy = 16\ndithering_ps2 = 0"
+        "fxaa = true\nPrecacheTextureReplacements = true\nCASMode = 1\nCASSharpness = 70\nfilter = 0\nMaxAnisotropy = 16\ndithering_ps2 = 0"
     );
 
     let forced = launch::armsx2_effect_lines(&set(&[

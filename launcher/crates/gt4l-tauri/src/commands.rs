@@ -1865,8 +1865,12 @@ pub fn open_textures_folder(shared: State<'_, Shared>) -> Result<(), String> {
 fn textures_state_of(state: &AppState) -> Value {
     let chosen = state.config.textures_path.as_deref();
     let valid = chosen.is_none_or(|path| gt4l_core::textures::check_textures_path(path, state.dirs.root()).is_ok());
+    // A folder synced from the phone carries the name the player saw in the picker, so the page can show plain words
+    // instead of the app's internal path.
+    let label = chosen.and_then(gt4l_core::textures::source_name).unwrap_or_default();
     json!({
         "path": chosen.map(|path| path.display().to_string()).unwrap_or_default(),
+        "label": label,
         "default": state.dirs.textures().display().to_string(),
         "custom": chosen.is_some(),
         "valid": valid,
@@ -1886,25 +1890,77 @@ pub fn textures_state(shared: State<'_, Shared>) -> Value {
 pub async fn choose_textures_folder(app: AppHandle, shared: State<'_, Shared>) -> Result<Option<Value>, String> {
     let shared = shared.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let (language, start) = {
-            let state = lock(&shared);
-            let start = state
-                .config
-                .textures_path
-                .clone()
-                .filter(|path| path.is_dir())
-                .or_else(gt4l_platform::known_folder::documents)
-                .unwrap_or_else(|| state.dirs.root().to_path_buf());
-            (state::language_of(&state), start)
-        };
-        // TASK-180: a texture folder outside the app is not available on Android yet (a document tree would be needed).
+        // Only the desktop picker's texts use it; on the phone the messages are the app's own.
+        #[allow(unused_variables)]
+        let language = state::language_of(&lock(&shared));
+        // TASK-180 (owner, 2026-11-06): on the phone the system folder picker chooses a folder (a tree the app keeps a
+        // persistable read permission to). The ARMSX2 GS reads plain file paths, never content URIs, so the picked
+        // tree is copied once into the app's own folder, laid out as a PCSX2 pack (`<serial>/replacements`); a later
+        // start reads the copy, and nothing is copied again.
         #[cfg(target_os = "android")]
         let folder: PathBuf = {
-            let _ = (&app, &start);
-            return Err("Choosing a texture folder is not available on Android yet.".to_string());
+            let _ = &app;
+            let Some(picked) = crate::android::pick_textures_folder()? else {
+                return Ok(None);
+            };
+            let uri = picked.uri.clone().unwrap_or_default();
+            let (destination, staging) = {
+                let state = lock(&shared);
+                let destination = state.dirs.root().join(gt4l_core::textures::PHONE_SYNC_FOLDER_NAME);
+                (destination.clone(), destination.with_extension("incoming"))
+            };
+            if staging.exists() {
+                fs::remove_dir_all(&staging).map_err(|error| format!("textures: {}: {error}", staging.display()))?;
+            }
+            let files = crate::android::sync_textures_tree(&uri, &staging)?;
+            let serial = gt4l_core::games::GT4.serial;
+            let layout = gt4l_core::textures::prepare_phone_textures(&staging, serial)
+                .map_err(|error| format!("textures: {}: {error}", staging.display()))?;
+            if let Some(name) = picked.name.as_deref() {
+                let _ = fs::write(staging.join(gt4l_core::textures::SOURCE_NAME_FILE), name);
+            }
+            if destination.exists() {
+                fs::remove_dir_all(&destination)
+                    .map_err(|error| format!("textures: {}: {error}", destination.display()))?;
+            }
+            fs::rename(&staging, &destination).map_err(|error| format!("textures: {}: {error}", destination.display()))?;
+            let replacements = gt4l_core::textures::count_replacements(&destination, serial);
+            {
+                let state = lock(&shared);
+                state::log(
+                    &state.dirs,
+                    &format!(
+                        "textures: \"{}\" copied into {} ({} files, {} replacements under {}/{}/replacements, layout {:?})",
+                        picked.name.as_deref().unwrap_or("the picked folder"),
+                        destination.display(),
+                        files,
+                        replacements,
+                        destination.display(),
+                        serial,
+                        layout
+                    ),
+                );
+                if layout == gt4l_core::textures::PhoneLayout::Nothing {
+                    state::log_warn(
+                        &state.dirs,
+                        "textures: the picked folder holds neither the game's folder nor a replacements folder; the pack will not load",
+                    );
+                }
+            }
+            destination
         };
         #[cfg(not(target_os = "android"))]
-        let folder = {
+        let folder: PathBuf = {
+            let start = {
+                let state = lock(&shared);
+                state
+                    .config
+                    .textures_path
+                    .clone()
+                    .filter(|path| path.is_dir())
+                    .or_else(gt4l_platform::known_folder::documents)
+                    .unwrap_or_else(|| state.dirs.root().to_path_buf())
+            };
             let picked = app
                 .dialog()
                 .file()
@@ -1928,11 +1984,19 @@ pub async fn choose_textures_folder(app: AppHandle, shared: State<'_, Shared>) -
     .map_err(|error| error.to_string())?
 }
 
-/// `reset_textures_folder()`: back to the default `Textures` folder. The chosen folder is left as it is.
+/// `reset_textures_folder()`: back to the default `Textures` folder. A folder the player chose on a computer is left as
+/// it is; the phone's copy is the app's own, and going back to the default frees it.
 #[tauri::command]
 pub fn reset_textures_folder(shared: State<'_, Shared>) -> Value {
     let mut state = lock(shared.inner());
-    if state.config.textures_path.take().is_some() {
+    if let Some(chosen) = state.config.textures_path.take() {
+        let _ = &chosen;
+        #[cfg(target_os = "android")]
+        if chosen.file_name().is_some_and(|name| name == gt4l_core::textures::PHONE_SYNC_FOLDER_NAME)
+            && chosen.parent() == Some(state.dirs.root())
+        {
+            let _ = fs::remove_dir_all(&chosen);
+        }
         state::log(&state.dirs, "textures: back to the default folder");
         state.save_config();
     }

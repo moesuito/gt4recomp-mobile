@@ -31,10 +31,11 @@ const ANDROID_ROWS_NOT_OFFERED: &[(&str, &str)] = &[
 /// Launcher rows that are not game settings (`SETTINGS`) but are drawn on the Settings page too.
 const LAUNCHER_ONLY_ROWS: &[&str] = &["launcher_gpu"];
 
-/// Rows that exist only on one platform. `armsx2_scale` is the private Android test build's ARMSX2 GS multiplier; the
-/// renderer itself is offered on both platforms (GSdx and CoreGS 2.0 on Windows, CoreGS 2.0 and ARMSX2 on Android).
+/// Rows that exist only on one platform. The `armsx2_*` rows are the private Android test build's ARMSX2 GS options (the
+/// Render scale itself is shared and not listed here); the renderer is offered on both platforms (GSdx and CoreGS 2.0 on
+/// Windows, CoreGS 2.0 and ARMSX2 on Android).
 const ANDROID_ONLY_ROWS: &[&str] = &[
-    "armsx2_scale",
+    "armsx2_textures",
     "armsx2_api",
     "armsx2_fxaa",
     "armsx2_cas",
@@ -118,14 +119,6 @@ impl Platform {
         }
     }
 
-    /// The value a setting must have on this platform whatever was stored (the renderer on Android).
-    pub fn forced_value(self, id: &str) -> Option<&'static str> {
-        match (self, id) {
-            (Platform::Android, "renderer") => Some(CORE_GS_20),
-            _ => None,
-        }
-    }
-
     /// Whether a renderer value can be chosen here.
     pub fn allows_renderer(self, value: &str) -> bool {
         match self {
@@ -136,10 +129,19 @@ impl Platform {
     }
 
     /// The value a setting takes on this platform for a *stored* value: only a value this platform cannot use is
-    /// replaced (Android's CoreGS 2.0 floor for an old GSdx choice), so a chosen ARMSX2 GS is kept.
+    /// replaced (an old GSdx choice on Android becomes the GSdx (ARMSX2) default), so a chosen renderer is kept.
     pub fn forced_value_for(self, id: &str, stored: &str) -> Option<&'static str> {
         match (self, id) {
-            (Platform::Android, "renderer") if !self.allows_renderer(stored) => Some(CORE_GS_20),
+            (Platform::Android, "renderer") if !self.allows_renderer(stored) => Some(ARMSX2_GS),
+            _ => None,
+        }
+    }
+
+    /// The value a setting gets when the player never chose one. Android ships the ARMSX2 GS as its default renderer
+    /// (owner, 2026-11-06); everything else follows the table.
+    pub fn default_value(self, id: &str) -> Option<&'static str> {
+        match (self, id) {
+            (Platform::Android, "renderer") => Some(ARMSX2_GS),
             _ => None,
         }
     }
@@ -184,7 +186,7 @@ mod tests {
                 continue;
             }
             assert!(Platform::Windows.offers(definition.id), "{}", definition.id);
-            assert_eq!(Platform::Windows.forced_value(definition.id), None);
+            assert_eq!(Platform::Windows.default_value(definition.id), None);
         }
         assert!(Platform::Windows.has_gsdx());
         assert!(Platform::Windows.installs_updates());
@@ -194,18 +196,19 @@ mod tests {
     #[test]
     fn android_has_coregs20_and_the_private_armsx2_renderer_but_no_installer() {
         let android = Platform::Android;
-        // Private test build: the Renderer row exists on Android with CoreGS 2.0 (default) and ARMSX2's GS in process;
-        // GSdx is never offered there. A stored GSdx choice still falls back to CoreGS 2.0, a chosen ARMSX2 stays.
+        // Private test build: the Renderer row exists on Android with GSdx (ARMSX2) as the default and CoreGS 2.0 as
+        // the second choice; GSdx is never offered there. A stored GSdx choice (a value from a computer) becomes the
+        // ARMSX2 default, and a chosen CoreGS 2.0 or ARMSX2 stays.
         assert!(android.offers("renderer"));
-        assert_eq!(android.forced_value("renderer"), Some(CORE_GS_20));
+        assert_eq!(android.default_value("renderer"), Some(ARMSX2_GS), "a fresh Android install starts on GSdx (ARMSX2)");
         assert_eq!(android.forced_value_for("renderer", CORE_GS_20), None);
         assert_eq!(android.forced_value_for("renderer", ARMSX2_GS), None);
-        assert_eq!(android.forced_value_for("renderer", PCSX2_GS), Some(CORE_GS_20));
+        assert_eq!(android.forced_value_for("renderer", PCSX2_GS), Some(ARMSX2_GS));
         assert!(!android.has_gsdx());
         assert!(!android.allows_renderer(PCSX2_GS));
         assert!(android.allows_renderer(ARMSX2_GS));
         assert!(!Platform::Windows.allows_renderer(ARMSX2_GS));
-        assert!(android.offers("armsx2_scale") && !Platform::Windows.offers("armsx2_scale"));
+        assert!(android.offers("armsx2_textures") && !Platform::Windows.offers("armsx2_textures"));
         assert!(android.allows_renderer(CORE_GS_20));
         assert!(!android.installs_updates());
         assert!(android.scale_floor_follows_screen() && !Platform::Windows.scale_floor_follows_screen());

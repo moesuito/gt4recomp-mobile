@@ -382,7 +382,16 @@ impl AppState {
                 "android test build: the performance report is on by default (F7 starts an interval, F8 writes it)",
             );
         }
-        // TASK-180: a value the platform fixes (CoreGS 2.0 on Android) replaces whatever is stored, and is saved.
+        // Owner (2026-11-06): Android ships with the ARMSX2 GS as its renderer. A player who never chose one gets it; a
+        // stored choice is kept.
+        if let Some(value) = platform.default_value("renderer") {
+            if !state.config.settings.was_chosen("renderer") && state.config.settings.get("renderer") != value {
+                let _ = state.config.settings.set("renderer", value);
+                state.save_config();
+                log(&state.dirs, &format!("{}: the default renderer is {value}", platform.name()));
+            }
+        }
+        // TASK-180: a value the platform fixes (an unusable renderer choice) replaces whatever is stored, and is saved.
         let mut forced = false;
         for definition in gt4l_core::SETTINGS {
             let stored = state.config.settings.get(definition.id).to_string();

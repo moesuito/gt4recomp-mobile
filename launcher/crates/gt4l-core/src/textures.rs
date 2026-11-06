@@ -296,6 +296,77 @@ pub fn resolve_location(default_folder: &Path, chosen: Option<&Path>, data_root:
     }
 }
 
+/// The folder a phone's picked texture folder is copied into (under the launcher's data folder). It is the app's own
+/// copy, laid out as PCSX2 packs are; a later start reads it as it is.
+pub const PHONE_SYNC_FOLDER_NAME: &str = "textures-sync";
+
+/// The file the sync writes with the name the player saw in the phone's picker, so the Settings page can show plain
+/// words instead of the app's internal path.
+pub const SOURCE_NAME_FILE: &str = ".gt4-source";
+
+/// What a synced phone folder held, as [`prepare_phone_textures`] found it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhoneLayout {
+    /// The picked folder already was a textures root (it held the game's serial folder).
+    Root,
+    /// The picked folder was the game's own folder (it held `replacements`): the same files, now under the serial.
+    Nested,
+    /// Neither the serial folder nor `replacements` was found: the pack will not load, and the caller says so.
+    Nothing,
+}
+
+/// Turns the copy of a folder picked on the phone into the layout the ARMSX2 GS reads: `<root>/<serial>/replacements`
+/// (PCSX2's texture pack layout, the same the PC's GSdx path uses). A folder that already holds the serial folder is
+/// kept as it is; one that holds `replacements` at its top (the player picked the game's own folder) has its contents
+/// moved under the serial folder. Nothing is deleted; a move that fails leaves the file where it was.
+pub fn prepare_phone_textures(root: &Path, serial: &str) -> io::Result<PhoneLayout> {
+    if root.join(serial).is_dir() {
+        return Ok(PhoneLayout::Root);
+    }
+    if !root.join(REPLACEMENTS_FOLDER_NAME).is_dir() {
+        return Ok(PhoneLayout::Nothing);
+    }
+    let game = root.join(serial);
+    fs::create_dir_all(&game)?;
+    let mut entries: Vec<_> = fs::read_dir(root)?.collect::<Result<_, _>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        if entry.file_name() == std::ffi::OsStr::new(serial) {
+            continue;
+        }
+        fs::rename(entry.path(), game.join(entry.file_name()))?;
+    }
+    Ok(PhoneLayout::Nested)
+}
+
+/// How many files sit under `<root>/<serial>/replacements`, recursively: the count the Settings page logs after a pick
+/// and the GS logs when it starts (`game.log`).
+pub fn count_replacements(root: &Path, serial: &str) -> u64 {
+    fn walk(folder: &Path, count: &mut u64) {
+        let Ok(entries) = fs::read_dir(folder) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match fs::metadata(&path) {
+                Ok(metadata) if metadata.is_dir() => walk(&path, count),
+                Ok(metadata) if metadata.is_file() => *count += 1,
+                _ => {}
+            }
+        }
+    }
+    let mut count = 0;
+    walk(&root.join(serial).join(REPLACEMENTS_FOLDER_NAME), &mut count);
+    count
+}
+
+/// The name the player saw for a synced folder, when the sync wrote it.
+pub fn source_name(root: &Path) -> Option<String> {
+    let text = fs::read_to_string(root.join(SOURCE_NAME_FILE)).ok()?;
+    let name = text.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,4 +508,58 @@ mod tests {
         assert_eq!(outcome, FlattenOutcome::Ran { moved: 0, kept: vec![], removed_folder: true, error: None });
         assert!(!textures.join(REPLACEMENTS_FOLDER_NAME).exists());
     }
+
+    #[test]
+    fn a_pack_that_already_has_the_serial_folder_is_kept() {
+        let base = scratch("phone-root");
+        let pack = base.join("textures");
+        fs::create_dir_all(pack.join("SCUS-97328").join(REPLACEMENTS_FOLDER_NAME)).unwrap();
+        fs::write(pack.join("SCUS-97328").join(REPLACEMENTS_FOLDER_NAME).join("a.png"), b"tex").unwrap();
+        assert_eq!(prepare_phone_textures(&pack, "SCUS-97328").unwrap(), PhoneLayout::Root);
+        assert!(pack.join("SCUS-97328").join(REPLACEMENTS_FOLDER_NAME).join("a.png").is_file());
+    }
+
+    #[test]
+    fn a_pack_that_is_the_game_folder_is_moved_under_the_serial() {
+        let base = scratch("phone-nest");
+        let pack = base.join("SCUS-97328");
+        fs::create_dir_all(pack.join(REPLACEMENTS_FOLDER_NAME).join("sub")).unwrap();
+        fs::write(pack.join(REPLACEMENTS_FOLDER_NAME).join("a.png"), b"tex").unwrap();
+        fs::write(pack.join(REPLACEMENTS_FOLDER_NAME).join("sub").join("b.png"), b"tex").unwrap();
+        assert_eq!(prepare_phone_textures(&pack, "SCUS-97328").unwrap(), PhoneLayout::Nested);
+        let replacements = pack.join("SCUS-97328").join(REPLACEMENTS_FOLDER_NAME);
+        assert!(replacements.join("a.png").is_file());
+        assert!(replacements.join("sub").join("b.png").is_file());
+    }
+
+    #[test]
+    fn a_folder_with_neither_the_serial_nor_replacements_is_reported() {
+        let base = scratch("phone-nothing");
+        let pack = base.join("textures");
+        fs::create_dir_all(pack.join("something")).unwrap();
+        fs::write(pack.join("something").join("a.png"), b"tex").unwrap();
+        assert_eq!(prepare_phone_textures(&pack, "SCUS-97328").unwrap(), PhoneLayout::Nothing);
+    }
+
+    #[test]
+    fn every_replacement_file_is_counted_recursively() {
+        let base = scratch("phone-count");
+        let replacements = base.join("SCUS-97328").join(REPLACEMENTS_FOLDER_NAME);
+        fs::create_dir_all(replacements.join("sub")).unwrap();
+        fs::write(replacements.join("a.png"), b"tex").unwrap();
+        fs::write(replacements.join("sub").join("b.png"), b"tex").unwrap();
+        fs::write(base.join("SCUS-97328").join("notes.txt"), b"not a replacement").unwrap();
+        assert_eq!(count_replacements(&base, "SCUS-97328"), 2);
+    }
+
+    #[test]
+    fn the_source_name_is_read_back_trimmed_and_empty_is_none() {
+        let base = scratch("phone-name");
+        assert_eq!(source_name(&base), None);
+        fs::write(base.join(SOURCE_NAME_FILE), b"  Texturas do GT4  \n").unwrap();
+        assert_eq!(source_name(&base).as_deref(), Some("Texturas do GT4"));
+        fs::write(base.join(SOURCE_NAME_FILE), b"  \n").unwrap();
+        assert_eq!(source_name(&base), None);
+    }
+
 }

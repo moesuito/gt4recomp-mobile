@@ -147,21 +147,42 @@ fn fill_render_scale_row(row: &mut Value, settings: &Settings, monitors: &[Monit
         .map(|target| target.output)
         .unwrap_or(display::FALLBACK_OUTPUT);
     let caps = display::RendererCaps { max_multiplier: MAX_UPSCALE_DEFAULT };
-    let height = output.height.min(output.width);
-    let steps = display::render_scale_steps_for(height, caps);
+    let height = output.height.min(output.width).max(1);
     let stored = settings.get("render_scale").parse::<u32>().unwrap_or(display::RENDER_SCALE_DEFAULT);
-    // The position the stored value lands on: the multiplier closest to it on this screen.
-    let current = display::percent_for_multiplier(display::multiplier_for_percent(stored, height, caps), height);
-    let mut options: Vec<Value> = Vec::new();
-    for percent in &steps {
-        let multiplier = display::multiplier_for_percent(*percent, height, caps);
-        let label = format!(
+    // One position per multiplier the chosen renderer accepts, labelled with the percentage of the screen's height it
+    // gives there and the internal size. The ARMSX2 GS takes its own multipliers (1x, 1.25x, ... 6x), so on the phone
+    // the same percentage model lands on one of those; CoreGS 2.0 keeps one position per whole multiplier.
+    let armsx2 = settings.get("renderer") == gt4l_core::settings::ARMSX2_GS;
+    let percent_of = |multiplier: f32| -> u32 {
+        ((display::NATIVE_FRAME_HEIGHT as f32 * multiplier * 100.0 / height as f32).round() as u32)
+            .clamp(display::RENDER_SCALE_MIN, display::RENDER_SCALE_MAX)
+    };
+    let label = |percent: u32, multiplier: f32| -> String {
+        format!(
             "{percent}% · {}x · {}x{}",
-            multiplier,
-            display::NATIVE_FRAME_WIDTH * multiplier,
-            display::NATIVE_FRAME_HEIGHT * multiplier
-        );
-        options.push(json!({ "value": percent.to_string(), "label": label }));
+            gt4l_core::launch::format_multiplier(multiplier),
+            (display::NATIVE_FRAME_WIDTH as f32 * multiplier).round() as u32,
+            (display::NATIVE_FRAME_HEIGHT as f32 * multiplier).round() as u32
+        )
+    };
+    let mut options: Vec<Value> = Vec::new();
+    let current: u32;
+    if armsx2 {
+        for multiplier in gt4l_core::launch::ARMSX2_MULTIPLIERS {
+            let percent = percent_of(multiplier);
+            if options.iter().any(|option| option["value"] == json!(percent.to_string())) {
+                continue;
+            }
+            options.push(json!({ "value": percent.to_string(), "label": label(percent, multiplier) }));
+        }
+        let wanted = stored as f32 * height as f32 / (100.0 * display::NATIVE_FRAME_HEIGHT as f32);
+        current = percent_of(gt4l_core::launch::armsx2_snap_multiplier(wanted));
+    } else {
+        for percent in display::render_scale_steps_for(height, caps) {
+            let multiplier = display::multiplier_for_percent(percent, height, caps) as f32;
+            options.push(json!({ "value": percent.to_string(), "label": label(percent, multiplier) }));
+        }
+        current = display::percent_for_multiplier(display::multiplier_for_percent(stored, height, caps), height);
     }
     row["control"] = json!("dropdown");
     row["values"] = Value::Array(options);
@@ -252,9 +273,10 @@ fn settings_table_versioned(
             continue;
         }
         let mut row = launcher_row(definition, settings);
-        // These launcher rows configure CoreGS 2.0 only (its render scale, its HUD, its vsync policy): with the ARMSX2
-        // GS chosen they are hidden, and they come back with CoreGS 2.0 (owner, 2026-11-06).
-        if platform == Platform::Android && matches!(definition.id, "render_scale" | "vsync") {
+        // The vsync policy is CoreGS 2.0's own on Android (the ARMSX2 GS draws into the game's window, which the
+        // emulator presents), so it is hidden while the ARMSX2 GS is chosen. The Render scale row is shared: both
+        // renderers take their internal resolution from it (owner, 2026-11-06).
+        if platform == Platform::Android && definition.id == "vsync" {
             row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 });
         }
         // TASK-161: the full trigger range sits with the triggers on the Controls page (its analog rows), not on General.
@@ -277,8 +299,8 @@ fn settings_table_versioned(
                 row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS });
             }
             "vsync" if settings.get("renderer") == gt4l_core::settings::CORE_GS_20 => without_fast_vsync(&mut row),
-            // TASK-135: CoreGS 2.0's own; GSdx has its overlay rows.
-            "performance_hud" => row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
+            // TASK-135: the performance HUD works with both renderers (the ARMSX2 GS library draws its own panel), so
+            // the row is not tied to a renderer (owner, 2026-11-06: it was missing under GSdx).
             _ => {}
         }
         rows.push(row);
@@ -991,40 +1013,47 @@ mod table_tests {
             let kept = listed.iter().any(|id| *id == table_row.id);
             assert_eq!(kept, CORE_GS_20_TABLE_ROWS.contains(&table_row.id.as_str()), "{}", table_row.id);
         }
-        for present in ["language", "update_channel", "render_scale", "vsync", "frame_rate", "coregs_sharpening", "trigger_full_range", "performance_hud", "armsx2_scale"] {
+        for present in ["language", "update_channel", "render_scale", "vsync", "frame_rate", "coregs_sharpening", "trigger_full_range", "performance_hud", "armsx2_textures"] {
             assert!(listed.iter().any(|id| id == present), "{present} is an Android row");
         }
     }
 
-    // Owner (2026-11-06): with the ARMSX2 GS chosen, the CoreGS 2.0 rows are hidden next to the ARMSX2 ones, and they
-    // come back with CoreGS 2.0.
+    // Owner (2026-11-06): with the ARMSX2 GS chosen, the CoreGS 2.0 rows are hidden next to the ARMSX2 ones, they come
+    // back with CoreGS 2.0, and the Render scale and Performance HUD rows stay for both (the ARMSX2 GS reads the same
+    // Render scale, and its library draws the HUD).
     #[test]
     fn armsx2_hides_the_coregs20_rows_and_coregs20_brings_them_back() {
         let mut armsx2 = Settings::default();
         armsx2.set("renderer", gt4l_core::settings::ARMSX2_GS).unwrap();
         let table = settings_table_for(Platform::Android, &armsx2, &Controls::default(), &[], &[], false);
         assert_eq!(row(&table, "renderer")["current"], gt4l_core::settings::ARMSX2_GS);
-        for hidden in ["render_scale", "vsync", "performance_hud", "performance_mode", "texture_load", "fxaa"] {
+        for hidden in ["vsync", "performance_mode", "texture_load", "fxaa"] {
             assert_eq!(
                 row(&table, hidden)["visible_when"],
                 json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
                 "{hidden} must hide under the ARMSX2 GS"
             );
         }
+        for shared in ["render_scale", "performance_hud"] {
+            assert!(row(&table, shared)["visible_when"].is_null(), "{shared} is a row for both renderers");
+        }
         assert_eq!(
-            row(&table, "armsx2_scale")["visible_when"],
+            row(&table, "armsx2_textures")["visible_when"],
             json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS })
         );
-        // The same rows for CoreGS 2.0: the CoreGS ones visible, the ARMSX2 resolution row hidden.
+        // The same rows for CoreGS 2.0: the CoreGS ones visible, the ARMSX2 rows hidden.
         let mut coregs = Settings::default();
         coregs.set("renderer", gt4l_core::settings::CORE_GS_20).unwrap();
         let table = settings_table_for(Platform::Android, &coregs, &Controls::default(), &[], &[], false);
-        for shown in ["render_scale", "vsync", "performance_hud", "performance_mode", "texture_load", "fxaa"] {
+        for shown in ["vsync", "performance_mode", "texture_load", "fxaa"] {
             assert_eq!(
                 row(&table, shown)["visible_when"],
                 json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
                 "{shown} follows CoreGS 2.0"
             );
+        }
+        for shared in ["render_scale", "performance_hud"] {
+            assert!(row(&table, shared)["visible_when"].is_null(), "{shared} is a row for both renderers");
         }
     }
 
@@ -1033,7 +1062,7 @@ mod table_tests {
     #[test]
     fn armsx2_rows_follow_the_renderer_choice() {
         let armsx2_rows = [
-            "armsx2_scale",
+            "armsx2_textures",
             "armsx2_api",
             "armsx2_fxaa",
             "armsx2_cas",
@@ -1108,7 +1137,7 @@ mod table_tests {
             assert!(!platform_accepts(Platform::Android, refused), "{refused}");
             assert!(platform_accepts(Platform::Windows, refused), "{refused}");
         }
-        for accepted in ["renderer", "language", "render_scale", "performance_mode", "fxaa", "texture_load", "l2_deadzone", "lstick_deadzone", "armsx2_scale"] {
+        for accepted in ["renderer", "language", "render_scale", "performance_mode", "fxaa", "texture_load", "l2_deadzone", "lstick_deadzone", "armsx2_textures"] {
             assert!(platform_accepts(Platform::Android, accepted), "{accepted}");
         }
     }
@@ -1361,7 +1390,7 @@ mod table_tests {
     }
 
     #[test]
-    fn the_performance_hud_is_a_coregs_choice_in_advanced_off_by_default() {
+    fn the_performance_hud_is_available_with_every_renderer_and_off_by_default() {
         let table = settings_table(&Settings::default(), &Controls::default());
         let hud = row(&table, "performance_hud");
         assert_eq!(hud["control"], "dropdown");
@@ -1370,7 +1399,7 @@ mod table_tests {
         assert_eq!(hud["default"], "off");
         let values: Vec<&str> = hud["values"].as_array().unwrap().iter().map(|value| value["value"].as_str().unwrap()).collect();
         assert_eq!(values, ["off", "fps", "full"]);
-        assert_eq!(hud["visible_when"]["equals"], gt4l_core::settings::CORE_GS_20);
+        assert!(hud["visible_when"].is_null(), "the row is not tied to a renderer");
     }
 
     #[test]
@@ -1402,7 +1431,7 @@ mod table_tests {
         assert_eq!(values.len(), 2, "GSdx and CoreGS 2.0 only; CoreGS 1.1 is gone (TASK-096)");
         assert_eq!(values[1]["value"], "coregs20");
         assert_eq!(values[1]["disabled"], false);
-        assert_eq!(values[1]["label"], "CoreGS 2.0 (recommended)");
+        assert_eq!(values[1]["label"], "CoreGS 2.0");
         for shared in CORE_GS_20_TABLE_ROWS {
             assert!(row(&table, shared).get("visible_when").is_none(), "{shared} works under both renderers");
         }

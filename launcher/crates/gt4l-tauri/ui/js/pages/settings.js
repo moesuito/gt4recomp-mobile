@@ -1199,6 +1199,22 @@
         // Owner, 2026-11-02: the menus and the scale on top, the switches below, each in the order they come in.
         graphicsRows = graphicsRows.filter(function (row) { return row.control !== "toggle"; })
           .concat(graphicsRows.filter(function (row) { return row.control === "toggle"; }));
+        // Owner (2026-11-06): on the phone the Render scale sits right under the Renderer, where the player looks first;
+        // the Windows page keeps its table order.
+        if (ctx.table.rows.some(function (row) { return row.id === "armsx2_textures"; })) {
+          var scaleRow = null;
+          graphicsRows = graphicsRows.filter(function (row) {
+            if (row.id === "render_scale") { scaleRow = row; return false; }
+            return true;
+          });
+          if (scaleRow) {
+            var afterRenderer = graphicsRows.length;
+            for (var position = 0; position < graphicsRows.length; position++) {
+              if (graphicsRows[position].id === "renderer") { afterRenderer = position + 1; break; }
+            }
+            graphicsRows.splice(afterRenderer, 0, scaleRow);
+          }
+        }
         var graphics = section(ctx, "graphics", GT4.t("settings.section_graphics"), graphicsRows);
         // TASK-088: opens <install>\data\Textures (TASK-091; made first, TASK-093: no replacements subfolder). Next to the texture options.
         if (graphics) {
@@ -1235,8 +1251,14 @@
             } }
           }, GT4.t("settings.textures_default"));
           var showTextures = function (state) {
-            var shown = state && state.custom ? state.path : (state && state.default) || "";
-            texturesPath.textContent = shown ? GT4.t("settings.textures_current", { path: shown }) : "";
+            // A folder picked on the phone is copied into the app's own storage and carries the name the player saw in
+            // the picker: the page shows that name in plain words instead of the app's internal path (owner, 2026-11-06).
+            var custom = state && state.custom;
+            var name = custom && state.label ? state.label : "";
+            var shown = custom ? (name || state.path) : (state && state.default) || "";
+            texturesPath.textContent = !shown ? "" : (name
+              ? GT4.t("settings.textures_current_custom", { name: shown })
+              : GT4.t("settings.textures_current", { path: shown }));
             defaultTextures.hidden = !(state && state.custom);
             texturesMissing.hidden = !(state && state.custom && !state.valid);
             texturesMissing.textContent = texturesMissing.hidden ? "" : GT4.t("settings.textures_missing", { path: state.path });
@@ -1246,9 +1268,11 @@
           graphics.appendChild(texturesMissing);
           graphics.appendChild(h("div", { class: "advanced-foot" }, [textures, chooseTextures, defaultTextures]));
         }
+        // A heading with no visible row under it is not drawn at all (owner, 2026-11-06: an empty "Advanced" heading
+        // showed on the phone with GSdx selected).
         section(ctx, "advanced", GT4.t("settings.section_advanced"), ctx.table.rows.filter(function (row) {
           return row.page === "advanced" && row.group !== "rc";
-        }), true);
+        }), false);
         // TASK-118: the release-candidate settings always come last (owner, 2026-10-26); a final build does not ship them.
         section(ctx, "rc", GT4.t("settings.section_rc"), ctx.table.rows.filter(function (row) {
           return row.group === "rc";

@@ -1,6 +1,7 @@
 # Private test build: ARMSX2's GS inside the GT4Recomp Android app (owner's phone only)
 
-Status: 2026-11-05, **PRIVATE and PCSX2-tainted, GPL-3.0+**. Never distributed, never merged, never pushed. This clone
+Status: 2026-11-06 (1.3.0-rc15), **PRIVATE and PCSX2-tainted, GPL-3.0+**. Never distributed, never merged, never
+pushed. This clone
 (`gt4-private-armsx2gs`, branch `private/armsx2-gs-s23`) has its push URL disabled on purpose.
 
 ## What it is
@@ -57,8 +58,9 @@ launcher's ARMSX2 renderer runs OpenGL ES. The Vulkan path is a rebuild away the
 
 `armsx2-gs.ini` is written on every Play from the launcher's own GS table (`gs_config_text`, the same base settings a
 `gt4-gs` session gets on Windows: blending accuracy, aspect 16:9, the GT4 display crop, no OSD, texture loading only) with
-the resolution multiplier from the new **ARMSX2 GS resolution** row: 1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x, 3x, 4x, 5x, 6x.
-A fractional value adds `ExtendedUpscalingMultipliers = true` (PCSX2 ignores fractional multipliers without it).
+the internal-resolution multiplier taken from the shared **Render scale** row and the screen, snapped to what the ARMSX2
+GS accepts (1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x, 3x, 4x, 5x, 6x). A fractional value adds
+`ExtendedUpscalingMultipliers = true` (PCSX2 ignores fractional multipliers without it).
 
 The owner's own lines go into `armsx2-gs-extra.ini`, beside it (created once with an example, never rewritten): every
 `[EmuCore/GS]` line there is applied on top of the base file, so a line he adds wins. Both files live in the app's
@@ -71,6 +73,113 @@ external files folder:
 
 `resources/` beside them holds `GameIndex.yaml` and the OpenGL ES shader sources, copied out of the APK assets by the
 launcher on Play.
+
+## Render scale (owner, 2026-11-06)
+
+The separate "ARMSX2 GS resolution" row is gone. Both renderers take their internal resolution from the shared **Render
+scale** row, the same percentage-of-the-screen-height model as the PC (`display::percent_for_multiplier`: 1x is 448
+pixels of the screen's height, so 31% on a 1440-high screen and 83% on the S23's 1080-high landscape picture). The row's
+positions are the multipliers the chosen renderer takes: with the ARMSX2 GS its own 1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x,
+3x, 4x, 5x and 6x (a fractional one adds `ExtendedUpscalingMultipliers = true`), with CoreGS 2.0 the whole 1x..12x as
+before. The stored value is the percentage, so the label, the positions and the value are one number on every screen.
+
+**The S23 default is 2x (83%).** The PC rule is the same 2x (`RENDER_SCALE_DEFAULT_MULTIPLIER = 2`), and on the S23's
+1080-high picture that percentage is exactly an ARMSX2 step, so nothing had to be lowered: 2x is what the previous build
+shipped and what the phone held at full speed. The reason not to go higher: 100% ("as tall as the screen") asks for
+2.5x on this screen, and the earlier 6x test (test1's notch model) ran the menus at 12 fps. A player who wants more can
+pick 100% or the steps above 2x in the row.
+
+## Texture replacement (owner, 2026-11-06)
+
+On the phone the player picks a folder with the system folder picker (SAF, a persistable read permission). The ARMSX2 GS
+reads plain file paths and never content URIs, so the picked tree is copied **once** into the app's own storage
+(`<app data>/data/textures-sync`) when the player chooses it; every later start reads that copy, and nothing is copied
+again. A new pick replaces the copy; "Use default folder" deletes it and goes back to `<data>/Textures`.
+
+The expected layout is PCSX2's own, the same one the PC's GSdx path reads (`GSTextureReplacements::GetGameTextureDirectory`):
+
+```
+<chosen folder>/
+  SCUS-97328/
+    replacements/
+      <the pack's files, any subfolders>
+```
+
+Picking the game's folder itself (one that holds `replacements` at its top) also works: after the copy its contents are
+moved under `SCUS-97328`. The Settings page shows the folder by the name the picker gave it ("Pasta de texturas: GT4
+textures (escolhida no celular)") instead of the internal path.
+
+The library gets `[Folders] Textures = <copy>` in `armsx2-gs.ini`, `LoadTextureReplacements = true` and
+`LoadTextureReplacementsAsync = true` (the "Custom textures" row, on by default). It logs at every start the folder,
+whether loading is on and how many replacement files it found:
+
+```
+[gt4gs] textures: folder .../data/textures-sync, loading on, 4 replacement files under .../SCUS-97328/replacements
+```
+
+The launcher logs the pick itself (`textures: "name" copied into ... (N files, M replacements ..., layout ...)`).
+
+## Version and file name like the PC (owner, 2026-11-06)
+
+- `versionName` is `1.3.0-rc15` (`GT4_RELEASE_LABEL=rc15` plus the crate version), so the launcher's footer, the logs
+  and Android's own app information say what the PC's rc15 says.
+- `versionCode` is `major | minor | patch | rc | build` as five groups: `1 03 00 15 00` = 1.3.0-rc15 build 0, so
+  **103001500 + build number** (this build: **103001501**). A final release of 1.3.0 uses `99` for the rc group
+  (103009900 + build) so it sorts above every rc of it; 1.3.1 starts at 103010000.
+- **Installing the public test builds (versionCode 5) on the same phone:** Android refuses an APK with a lower
+  versionCode than the installed one, so a public build cannot be installed over this private one. Uninstall this app
+  first (its app data, including the prepared game files, the card and the texture copy, is removed with it), or give the
+  public build a higher code. This private build is never published, so the public line's code is unchanged.
+
+
+## Final polish2 build, rc15 (owner, 2026-11-06)
+
+**Version and file.** `1.3.0-rc15` (versionName; the launcher's footer and General page, the logs and Android's app
+information say the same), versionCode **103001501**, file `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`,
+**143,919,214 bytes**, sha256 `71ec60d870b11076cb33ba0f497f1e61c7367b9ef509d6d350934d42e5df5a97`, signed with the owner's
+release key (CN=GT4Recomp, O=moesuito) and `zipalign -c -P 16` clean. The old `android-test4` APK and its `.sha256` are
+gone; `symbols/` carries the new `libgt4gs-unstripped.so`.
+
+**What the player sees.**
+- **GSdx (ARMSX2) is the default renderer**, CoreGS 2.0 the second choice, in both languages; a renderer the player
+  chose is kept. A fresh install logs `android: the default renderer is armsx2` and saves it.
+- **The Render scale row** (same percentage-of-the-screen-height model as the PC) sits right under the Renderer and
+  feeds both renderers. On the emulator's 1080-high screen a fresh install shows **83% · 2x · 1280x896**: the screen is
+  read at start-up and the table's 100% (old model) becomes the 2x default before the first Play.
+- **The Performance HUD row shows with GSdx (ARMSX2)**, and the setting reaches the library: the game starts with
+  `GT4_ARMSX2_GS_HUD=full` and every VSync line ends in `HUD full`.
+- **No empty headings:** the Display and Advanced sections are hidden when they have no visible row.
+- **"Escolher pasta…" opens the phone's folder picker** (SAF, persistable read permission). The picked tree is copied
+  once into `<data>/data/textures-sync`, laid out as PCSX2 packs are (`<serial>/replacements`), and the page shows the
+  name in plain words: "Pasta de texturas: GT4-textures (escolhida no celular)". "Usar a pasta padrão" deletes the copy.
+
+**Texture proof (`game.log` via logcat).** `[gt4gs] textures: folder .../textures-sync, loading on, 4 replacement files
+under .../SCUS-97328/replacements`; the launcher logs `textures: "GT4-textures" copied into .../textures-sync (4 files, 4
+replacements ..., layout Root)`. `armsx2-gs.ini` holds `upscale_multiplier = 2`, `LoadTextureReplacements = true`,
+`LoadTextureReplacementsAsync = true`, `PrecacheTextureReplacements = true` and `[Folders] Textures =
+.../textures-sync`. The test pack is four 64x64 PNGs made for this check (never game data), at
+`build/evidence/t180-rc15/textures/SCUS-97328/replacements/`.
+
+**Emulator evidence** (`emulator-5556`, x86_64 API 36 image, arm64 APK through translation, `-gpu lavapipe`; the
+scratchpad's `emu2.cmd` refused to start while emulator-5554 held the same AVD without `-read-only`, so the separate AVD
+`F:\GT4Recomp-android\avd-b` (`build/emu-second.cmd`) was used on the same port). Screenshots in
+`build/evidence/t180-rc15/` (not committed; `build/` is ignored):
+- fresh install, English: `06-settings-en.png` (GSdx (ARMSX2), 83% · 2x · 1280x896), `09-graphics-advanced-en.png`
+  (Performance HUD row, RC settings, no empty heading), `10-hud-full-en.png` (HUD set to Full), `05-home-en.png`
+  (`GT4Recomp 1.3.0-rc15`), `18-general-en.png` (Version `1.3.0-rc15`);
+- textures: `12-textures-block-full-en.png`, `13-folder-picker.png`, `15-picker-gt4textures.png` (the system folder
+  picker in GT4-textures), `17-textures-chosen-en.png` ("Textures folder: GT4-textures (chosen on this phone)");
+- pt-BR: `20-graphics-ptbr.png` (Renderizador GSdx (ARMSX2), Escala de renderização 83% · 2x · 1280x896),
+  `21-textures-ptbr.png` ("Pasta de texturas: GT4-textures (escolhida no celular)"), `19-language.png`;
+- Play: the deviceless renderer (`debug.env`: `GT4_ARMSX2_GS_RENDERER=null`, because the emulator's guest GL is ES 3.0
+  and ARMSX2 needs 3.1) ran the stream with `HUD full`; every line above is from that run.
+
+**Vulkan and FSR1: still not available.** The Android build links a `shaderc` target that the local ARMSX2 source tree
+does not carry: `3rdparty/shaderc` and its glslang / SPIRV-Tools / SPIRV-Headers sources are absent, and the clone has no
+`.gitmodules` pinning their revisions. Building the Vulkan back end means fetching all four at the right revisions and
+building them for arm64; the brief allows stopping there, so the library keeps OpenGL ES, `gt4gs_has_vulkan()` returns 0,
+a Vulkan request falls back with a `game.log` line, and FSR1 / Snapdragon Super Resolution stay unoffered (they are
+Vulkan-only in this ARMSX2).
 
 ## Logging
 
@@ -137,12 +246,23 @@ fetch and depth feedback was chosen, the uber shaders compiled and the shader ca
 missing file, not on the driver. A Vulkan build would not have avoided this one (its shaders have the same staging
 rule), and it is not needed for this failure.
 
-## Settings page (owner, 2026-11-06)
+## Default renderer and the settings page (owner, 2026-11-06)
 
-While the ARMSX2 GS is selected the CoreGS 2.0 rows are hidden (render scale, vsync, performance HUD, Performance Mode,
-texture loading, FXAA) and come back with CoreGS 2.0; the ARMSX2 resolution row only shows for the ARMSX2 GS. Both
-directions were checked in the emulator. The new rows are translated in pt-BR: "Resolução do ARMSX2 GS", "1,5x",
-"ARMSX2 GS (experimental, build privada)".
+- **Default.** This build starts new installs on **GSdx (ARMSX2)**; **CoreGS 2.0** is the second choice. The labels are
+  the PC's where they exist, in both languages. A renderer the player already chose is kept: the platform default fills
+  only a value the player never set (`Settings::was_chosen`), and an unusable stored value (GSdx, a computer value) in an
+  old file becomes the ARMSX2 default once and is saved.
+- **Rows under GSdx (ARMSX2):** the ARMSX2 rows (Custom textures, graphics API, FXAA, CAS and its amount, texture
+  filtering, anisotropic filtering, dithering), plus the rows both renderers share: Render scale, frame rate, the
+  performance HUD, Performance report, VU code check, language, update channel and the controls. CoreGS 2.0's own rows
+  (vsync policy, Performance Mode, texture loading, FXAA) hide.
+- **Rows under CoreGS 2.0:** its own rows (vsync, Performance Mode, texture loading, FXAA, sharpening) plus the same
+  shared rows; every ARMSX2 row hides.
+- **Render scale and the Performance HUD are shared now:** the render scale feeds both renderers (see below), and the
+  HUD's panel is drawn by the ARMSX2 library. Neither row is tied to a renderer any more.
+- **Empty headings.** A heading with no visible row under it is not drawn: the empty "Advanced" heading the owner saw is
+  gone.
+- **The Performance report stays the player's:** the owner turned it off; nothing here changes it.
 
 ## Owner's S23 report, second run (2026-11-06): the GS thread aborted on the first frame
 

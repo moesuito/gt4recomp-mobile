@@ -52,6 +52,27 @@ struct PickArgs<'a> {
     copy_to: Option<String>,
 }
 
+/// The folder the player picked on the phone for replacement textures: the document-tree URI and its display name.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PickedTree {
+    pub uri: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+#[derive(Serialize)]
+struct SyncTreeArgs<'a> {
+    uri: &'a str,
+    destination: &'a str,
+}
+
+#[derive(Deserialize, Default)]
+struct SyncedTree {
+    #[serde(default)]
+    files: u64,
+}
+
 /// The document the player picked.
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -532,13 +553,20 @@ struct DisplayInfo {
     refresh_hz: f32,
 }
 
-/// Reads the screen's current mode once (from a worker thread: the bridge answers through the main thread).
-fn load_screen(dirs: &DataDirs) {
+/// Reads the screen's current mode once (from a worker thread: the bridge answers through the main thread), then
+/// converts the Render scale with it: the row is a percentage of the screen's height, and a file written under the old
+/// model (or a new one, whose first value is the table's 100%) becomes this screen's default before the first Play, so
+/// the Settings page shows the value the phone will use (owner, 2026-11-06).
+fn load_screen(dirs: &DataDirs, shared: &Shared) {
     match bridge().and_then(|bridge| bridge.run_mobile_plugin::<DisplayInfo>("displayInfo", ()).map_err(|error| error.to_string())) {
         Ok(info) if info.width > 0 && info.height > 0 => {
             let size = gt4l_core::display::Size::new(info.width.max(info.height), info.width.min(info.height));
             let _ = SCREEN.set((size, info.refresh_hz.round() as u32));
             state::log(dirs, &format!("screen: {} at {:.2} Hz (the Render scale's output)", size.text(), info.refresh_hz));
+            let mut state = state::lock(shared);
+            if crate::state::migrate_render_scale_at(size, &mut state.config, dirs) {
+                state.save_config();
+            }
         }
         Ok(_) => state::log_warn(dirs, "screen: the display reported no size"),
         Err(message) => state::log_warn(dirs, &format!("screen: not read ({message})")),
@@ -726,6 +754,34 @@ pub fn pick_document(mime_types: &[&str], persist: bool, copy_to: Option<&Path>)
     Ok(picked.uri.is_some().then_some(picked))
 }
 
+/// Lets the player pick a folder on the phone for replacement textures, with the system folder picker. The app keeps a
+/// persistable read permission to the tree. `None` when the player cancels.
+pub fn pick_textures_folder() -> Result<Option<PickedTree>, String> {
+    let picked: PickedTree = bridge()?
+        .run_mobile_plugin("pickTexturesFolder", ())
+        .map_err(|error| {
+            logcat(gt4l_core::logs::Level::Error, &format!("textures folder picker failed: {error}"));
+            format!("textures folder picker: {error}")
+        })?;
+    Ok(picked.uri.is_some().then_some(picked))
+}
+
+/// Copies the picked folder into `destination` (the app's own storage), returning how many files were written. The
+/// ARMSX2 GS reads plain file paths, never document URIs; a later start reads the copy, so this runs only when the
+/// player chooses a folder.
+pub fn sync_textures_tree(uri: &str, destination: &Path) -> Result<u64, String> {
+    let synced: SyncedTree = bridge()?
+        .run_mobile_plugin(
+            "syncTexturesTree",
+            SyncTreeArgs { uri, destination: &destination.display().to_string() },
+        )
+        .map_err(|error| {
+            logcat(gt4l_core::logs::Level::Error, &format!("textures folder copy failed: {error}"));
+            format!("textures folder copy: {error}")
+        })?;
+    Ok(synced.files)
+}
+
 /// Opens a document for reading: the descriptor the system hands the app for a permission it holds.
 pub fn open_document(uri: &str) -> std::io::Result<File> {
     let descriptor: Descriptor = bridge()
@@ -800,17 +856,19 @@ pub fn run() {
             // The app's external files folder at once (a bench card path is checked against it); the screen comes from a
             // worker thread, because the bridge answers through the main thread and is not ready inside setup.
             load_external_dir();
-            // The phone's facts and the game's last ends, read off the main thread (the bridge answers through it).
+            let shared: Shared = Arc::new(Mutex::new(app_state));
+            // The phone's facts and the game's last ends, read off the main thread (the bridge answers through it); the
+            // screen read also converts the Render scale, so the shared state is made before the thread starts.
             let start_dirs = dirs.clone();
+            let start_shared = shared.clone();
             std::thread::spawn(move || {
-                load_screen(&start_dirs);
+                load_screen(&start_dirs, &start_shared);
                 for line in device_lines() {
                     state::log(&start_dirs, &line);
                 }
                 record_game_exits(&start_dirs);
                 remove_stale_bench_cards(&start_dirs);
             });
-            let shared: Shared = Arc::new(Mutex::new(app_state));
             app.manage(shared);
             app.manage(Arc::new(Guard { page: PageReady::default(), dirs, user_root: user.root().to_path_buf(), started }));
             // TASK-180 test3 (owner's phone): the pad commands (capture_binding, pad_status, the Controls page's live
@@ -1037,7 +1095,15 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             let paths = launch::armsx2_paths(external);
             std::fs::create_dir_all(&paths.root).map_err(|error| format!("ARMSX2 GS folder: {error}"))?;
             std::fs::create_dir_all(&paths.resources).map_err(|error| format!("ARMSX2 GS resources: {error}"))?;
-            let text = launch::armsx2_config_text(&settings, &paths, &textures.folder)?;
+            // The ARMSX2 GS reads its replacements from the folder the ini names. A folder picked on the phone (the synced
+            // copy) wins; otherwise the library's own `textures` folder under its data root, which it creates. CoreGS 2.0
+            // keeps the launcher's shared folder through GT4_HW_TEXTURES (the plan above).
+            let armsx2_textures = if textures.custom {
+                textures.folder.clone()
+            } else {
+                paths.root.join("textures")
+            };
+            let text = launch::armsx2_config_text(&settings, &paths, &armsx2_textures, display.as_ref())?;
             if let Err(error) = gt4l_core::gs_table::write_ini_atomic(&paths.config, &text) {
                 state::log_warn(&data_dirs, &format!("ARMSX2 GS settings: {error}"));
             }
@@ -1051,8 +1117,8 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             state::log(
                 &data_dirs,
                 &format!(
-                    "graphics: renderer ARMSX2 GS (in process), scale {}, settings {}, extra {}",
-                    settings.get("armsx2_scale"),
+                    "graphics: renderer GSdx (ARMSX2) in process, multiplier {}x, settings {}, extra {}",
+                    gt4l_core::launch::format_multiplier(gt4l_core::launch::armsx2_multiplier(&settings, display.as_ref())),
                     paths.config.display(),
                     paths.overrides.display()
                 ),
@@ -1062,7 +1128,6 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             plan.environment.push(("GT4_ARMSX2_GS_DIR".into(), paths.root.display().to_string()));
             plan.environment.push(("GT4_ARMSX2_GS_CONFIG".into(), paths.config.display().to_string()));
             plan.environment.push(("GT4_ARMSX2_GS_OVERRIDES".into(), paths.overrides.display().to_string()));
-            plan.environment.push(("GT4_ARMSX2_GS_SCALE".into(), settings.get("armsx2_scale").to_string()));
             // The API row (OpenGL ES by default, Vulkan experimental) and the performance HUD, which the library draws
             // itself (the game's own HUD belongs to CoreGS 2.0).
             plan.environment.push(("GT4_ARMSX2_GS_RENDERER".into(), settings.get("armsx2_api").to_string()));

@@ -1,3 +1,37 @@
+## Private GPL test build: rc15, GSdx (ARMSX2) as the default renderer (private/armsx2-gs-s23, 2026-11-06)
+
+**PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** The clone `gt4-private-armsx2gs` (push disabled)
+ships the ARMSX2 GS in the game process on the owner's phone.
+
+- **Renderer:** Android now starts on **GSdx (ARMSX2)**; CoreGS 2.0 is the second choice, in both languages, and a
+  renderer the player already chose is kept. A missing choice becomes ARMSX2 and is saved.
+- **Render scale:** the separate "ARMSX2 GS resolution" row is gone. The shared Render scale row (percentage of the
+  screen's height, the PC's model) sits under the Renderer, feeds both renderers and is snapped to ARMSX2's own
+  multipliers (1x, 1.25x .. 6x). A fresh install reads the screen at start-up and lands on the 2x default: 83% · 2x ·
+  1280x896 on a 1080-high screen, 62% · 2x on the S23's 1440-high picture.
+- **Settings page:** the Performance HUD row shows with GSdx (ARMSX2) (the library draws the panel; `GT4_ARMSX2_GS_HUD`
+  reaches it), no heading is drawn without a visible row, and the picture options from the previous round stay.
+- **Textures:** "Escolher pasta…" opens the system folder picker; the picked tree is copied once into
+  `<data>/data/textures-sync` (ARMSX2 reads file paths, never content URIs), expected layout
+  `<serial>/replacements`, and the page shows the plain name. The library logs the folder and the replacement count in
+  `game.log`; `LoadTextureReplacements`, `LoadTextureReplacementsAsync` and `PrecacheTextureReplacements` are on.
+- **Vulkan and FSR1:** not built. The local ARMSX2 tree has no shaderc/glslang/SPIRV-Tools sources and no pinned
+  revisions for them; OpenGL ES stays the default, a Vulkan request falls back with a log line, and FSR1/SGSR (Vulkan-only)
+  stay unoffered.
+- **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk` (versionName `1.3.0-rc15`, versionCode 103001501 = 103001500 + build
+  1, the owner's release key, `zipalign -c -P 16` clean), 143,919,214 bytes, sha256
+  `71ec60d870b11076cb33ba0f497f1e61c7367b9ef509d6d350934d42e5df5a97`, in the main checkout's
+  `private/android-private-armsx2gs/`. The old `android-test4` APK is gone; `symbols/` has the new `libgt4gs`.
+  A public test build (versionCode 5) cannot be installed over it on the same phone: this private line is far above it,
+  so the app must be uninstalled first (its data goes with it).
+- **Emulator evidence:** `emulator-5556` (separate AVD `avd-b`, API 36, arm64 APK through translation), fresh install:
+  GSdx (ARMSX2) selected, Render scale 83% · 2x; the folder picker chose the 4-file test pack and `game.log` shows
+  `textures: folder .../textures-sync, loading on, 4 replacement files under .../SCUS-97328/replacements`; the deviceless
+  renderer ran the stream with `HUD full`. Screenshots: `build/evidence/t180-rc15/` in the clone (not committed).
+- **Checks:** `cargo test -p gt4l-core` green; `cargo test -p gt4l-tauri --lib -- --test-threads=1` 146 passed (the
+  flow_audit tests interfere when run in parallel, as before; serially they pass). The APK builds with
+  `cargo tauri android build --target aarch64 --apk --ci` and `GT4_RELEASE_LABEL=rc15`.
+
 ## Private GPL test build: the ARMSX2 GS beside CoreGS 2.0 (private/armsx2-gs-s23, 2026-11-05)
 
 **PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** The clone `gt4-private-armsx2gs` (push disabled)

@@ -188,9 +188,9 @@
   "choice.language.en-US": "English",
   "choice.language.pt-BR": "Português (Brasil)",
   "setting.renderer.label": "Renderizador",
-  "setting.renderer.help": "O CoreGS 2.0 é o nosso próprio renderizador e o recomendado: faz parte do jogo e usa bem menos processador. O ARMSX2 GS (experimental, build privada) roda o GS do emulador ARMSX2 dentro do jogo, para comparação: é experimental e pode mostrar defeitos.",
-  "choice.renderer.coregs20": "CoreGS 2.0 (recomendado)",
-  "choice.renderer.armsx2": "ARMSX2 GS (experimental, build privada)",
+  "setting.renderer.help": "O GSdx (ARMSX2) roda o GS do emulador ARMSX2 dentro do jogo e é o padrão desta build privada. O CoreGS 2.0 é o nosso próprio renderizador e a segunda opção, com custo de processador bem menor.",
+  "choice.renderer.coregs20": "CoreGS 2.0",
+  "choice.renderer.armsx2": "GSdx (ARMSX2)",
   "setting.vsync.help_coregs20": "Ligado mantém o movimento suave, sem rasgos na imagem. Desligado reduz a latência e pode rasgar a imagem.",
   "settings.gsdx_title": "Baixar o GSdx?",
   "settings.gsdx_text": "O GSdx ainda não está neste PC. É um renderizador opcional, baixado da internet. Se você cancelar, o CoreGS 2.0 continua selecionado.",
@@ -227,8 +227,6 @@
   "choice.graphics_card.auto": "Automático (melhor)",
   "setting.render_scale.label": "Escala de renderização",
   "setting.render_scale.help": "O quão nítida é a imagem. 100% a desenha pelo menos na sua resolução (definida pela opção Resolução na página Tela); 50% é mais rápido e mais suave, 200% é mais nítido e exige uma placa de vídeo bem mais rápida. O número ao lado do controle é a resolução interna resultante.",
-  "setting.armsx2_scale.label": "Resolução do ARMSX2 GS",
-  "setting.armsx2_scale.help": "Só para o ARMSX2 GS: o multiplicador de resolução interna. 1,25x a 1,75x e 2,5x são escalas fracionárias e precisam de um driver de vídeo que as aceite. As suas linhas extras de GS ficam no armsx2-gs-extra.ini, ao lado do armsx2-gs.ini na pasta de arquivos do aplicativo.",
   "setting.armsx2_api.label": "API gráfica do ARMSX2 GS",
   "setting.armsx2_api.help": "O OpenGL ES é a API que o ARMSX2 GS usa no Android por padrão: é a que o ARMSX2 mantém suportada lá. O Vulkan é experimental: o ARMSX2 o deixa fora da escolha de renderizador no Android por causa de erros de mistura (blending), e esta build privada pode nem trazê-lo (o log do jogo então avisa e continua no OpenGL ES).",
   "choice.armsx2_api.ogl": "OpenGL ES",
@@ -956,5 +954,8 @@
   "rust.wheel.game_running": "O jogo está aberto: feche-o para mudar os controles do volante ou testar a força.",
   "rust.wheel.newer_file": "O arquivo do volante foi criado por um GT4Recomp mais novo e foi mantido como está. Atualize o launcher para mudá-lo.",
   "rust.wheel.could_not_save": "Não foi possível salvar as configurações do volante: {error}",
-  "rust.wheel.unknown_template": "Não existe modelo de volante chamado {name}."
+  "rust.wheel.unknown_template": "Não existe modelo de volante chamado {name}.",
+  "setting.armsx2_textures.label": "Texturas personalizadas",
+  "setting.armsx2_textures.help": "Carrega pacotes de texturas com o ARMSX2 GS a partir da pasta escolhida abaixo (os mesmos pacotes e o mesmo formato de pastas do PCSX2 que no PC: a pasta com o serial do jogo e, dentro dela, a pasta replacements). Desligado usa as texturas do próprio jogo. As suas linhas extras de GS ficam no armsx2-gs-extra.ini, ao lado do armsx2-gs.ini na pasta de arquivos do aplicativo.",
+  "settings.textures_current_custom": "Pasta de texturas: {name} (escolhida no celular)"
 }

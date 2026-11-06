@@ -22,6 +22,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
+import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.activity.result.ActivityResult
 import app.tauri.annotation.ActivityCallback
@@ -60,6 +61,12 @@ class GameArgs {
     var arguments: Array<String> = arrayOf()
     var environment: Array<String> = arrayOf()
     var texts: Array<String> = arrayOf()
+}
+
+@InvokeArg
+class SyncTreeArgs {
+    var uri: String = ""
+    var destination: String = ""
 }
 
 @InvokeArg
@@ -124,6 +131,113 @@ class GameBridgePlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.reject(error.message ?: error.toString())
             }
         }.start()
+    }
+
+    // Owner (2026-11-06): the texture folder picker on the phone. The player picks any folder with the system picker
+    // (a tree the app keeps a persistable read permission to), and the launcher copies it once into the app's own
+    // storage, because ARMSX2 reads plain file paths, never content URIs. Nothing is copied again on a later start.
+    @Command
+    fun pickTexturesFolder(invoke: Invoke) {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(invoke, intent, "pickTexturesFolderResult")
+    }
+
+    @ActivityCallback
+    fun pickTexturesFolderResult(invoke: Invoke, result: ActivityResult) {
+        val uri = result.data?.data
+        if (result.resultCode != Activity.RESULT_OK || uri == null) {
+            invoke.resolve(JSObject())
+            return
+        }
+        try {
+            activity.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (error: Exception) {
+            // A provider that cannot grant a persistable permission still grants it for this session.
+        }
+        val answer = JSObject()
+        answer.put("uri", uri.toString())
+        answer.put("name", treeName(uri))
+        invoke.resolve(answer)
+    }
+
+    // Copies one document tree into `destination` (app storage), returning how many files were written. Only the
+    /// player's choice triggers it, so a large pack is copied once, not at every start.
+    @Command
+    fun syncTexturesTree(invoke: Invoke) {
+        val args = invoke.parseArgs(SyncTreeArgs::class.java)
+        Thread {
+            try {
+                val tree = Uri.parse(args.uri)
+                val root = File(args.destination)
+                root.mkdirs()
+                var files = 0
+                fun walk(parent: Uri, folder: File) {
+                    val children = queryChildren(parent)
+                    for ((name, mime, id) in children) {
+                        val childUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                        val target = File(folder, name)
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            target.mkdirs()
+                            walk(childUri, target)
+                        } else {
+                            activity.contentResolver.openInputStream(childUri)?.use { from ->
+                                FileOutputStream(target).use { to -> from.copyTo(to) }
+                            } ?: throw IllegalStateException("$childUri cannot be read")
+                            files += 1
+                        }
+                    }
+                }
+                walk(tree, root)
+                val answer = JSObject()
+                answer.put("files", files)
+                invoke.resolve(answer)
+            } catch (error: Exception) {
+                invoke.reject(error.message ?: error.toString())
+            }
+        }.start()
+    }
+
+    // The name the folder picker shows for the picked tree ("GT4 textures"), for the Settings page's plain words. A
+    // tree URI is not a document: the provider throws UnsupportedOperationException for columns it does not serve, so
+    // every query here is guarded and the last fallback is the document id.
+    private fun treeName(uri: Uri): String? {
+        try {
+            activity.contentResolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) return cursor.getString(0)
+            }
+        } catch (error: Exception) {
+            // A provider without that column: the question falls back to the document id below.
+        }
+        try {
+            displayName(uri)?.let { return it }
+        } catch (error: Exception) {
+            // A tree URI does not answer OpenableColumns: the document id below names it.
+        }
+        val id = try { DocumentsContract.getTreeDocumentId(uri) } catch (error: Exception) { return null }
+        return id.substringAfterLast('/').substringAfterLast(':').ifEmpty { null }
+    }
+
+    private fun queryChildren(parent: Uri): List<Triple<String, String, String>> {
+        // The document id of THIS folder, not the tree's root: a child URI is tree/<root>/document/<id>, and using the
+        // tree id there would list the root again on every level. About a tree URI itself getDocumentId throws (it only
+        // takes document URIs), so the root's own id comes from getTreeDocumentId.
+        val segments = parent.pathSegments
+        val isDocumentUri = segments.size >= 4 && segments[2] == "document"
+        val documentId = if (isDocumentUri) DocumentsContract.getDocumentId(parent) else DocumentsContract.getTreeDocumentId(parent)
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(parent, documentId)
+        val out = mutableListOf<Triple<String, String, String>>()
+        activity.contentResolver.query(childrenUri, arrayOf(
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+        ), null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                out.add(Triple(cursor.getString(0), cursor.getString(1), cursor.getString(2)))
+            }
+        }
+        return out
     }
 
     @Command
