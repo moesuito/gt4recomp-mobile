@@ -29,8 +29,13 @@ by the same GS stream the game sends to `gt4-gs.exe` on Windows, through an in-p
   `shaders/opengl/*.glsl`, so `shaders/common/fxaa.fx` (and the FidelityFX headers) never reached the phone. The staging
   now ships the whole `shaders` tree (33 files) and the app extracts it on Play. GLES on Adreno was not the cause; a
   Vulkan build would not have avoided this one. The same APK hides the CoreGS 2.0 rows while ARMSX2 is chosen and has
-  them translated in pt-BR. Rebuilt APK: sha256
-  `78fcb3e021fe00ce94ef62eaa0001aafee607bd065fc0409801e90b54f4b4c3a`.
+  them translated in pt-BR.
+- **Second S23 run (2026-11-06): the GS thread aborted on the first frame.** With the shaders in place the device opened
+  on the Adreno and the stream started, then the per-frame dump-replay overlay read a null dump and aborted (three
+  identical tombstones). The overlay and the end-of-present UI block are skipped while the stream runs (this library has
+  no UI), and the overlay itself returns when there is no dump. Verified in the emulator with a deviceless renderer
+  (`GT4_ARMSX2_GS_RENDERER=null`): 2,700+ VSyncs processed, no abort. Rebuilt APK: sha256
+  `8f9d10607f52ad026fbde0da531249514d99ab7376f1f3c40daa77d11a4c49ae`.
 
 ## Android test4: the Performance report back, TASK-182 savings on, UMA phase 1 (TASK-180, 2026-11-05 evening)
 

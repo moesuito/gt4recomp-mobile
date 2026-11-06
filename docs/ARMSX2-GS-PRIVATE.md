@@ -140,3 +140,32 @@ While the ARMSX2 GS is selected the CoreGS 2.0 rows are hidden (render scale, vs
 texture loading, FXAA) and come back with CoreGS 2.0; the ARMSX2 resolution row only shows for the ARMSX2 GS. Both
 directions were checked in the emulator. The new rows are translated in pt-BR: "Resolução do ARMSX2 GS", "1,5x",
 "ARMSX2 GS (experimental, build privada)".
+
+## Owner's S23 report, second run (2026-11-06): the GS thread aborted on the first frame
+
+With the shaders staged, his log (`private/owner-logs-20261106-020257`) shows the device being created on the Adreno 740
+(ES 3.2 context, Adreno profile, uber shaders compiled, `create_done`) and the stream starting — then:
+
+```
+[0.4262] (gt4gs) stream started (renderer OpenGL ES)
+Aborting application.
+```
+
+The tombstone of all three runs is the same: SIGABRT on the **GS thread**, in the dump-replay overlay, called from the
+GS renderer's end-of-present path. That overlay is the status text the emulator shows while it plays a recorded GS dump;
+this library has graphic state but no dump file, so the overlay read a null dump and aborted on the first VSync.
+
+**Fix.**
+- The end-of-present path returns as soon as it has ended the present while the stream runs: no dump overlay, no
+  fullscreen UI, no OSD and no ImGui frame (this library has no UI; the game's own HUD is the only overlay).
+- The dump overlay itself now returns when there is no dump file, for any other caller.
+- For diagnosis, `GT4_ARMSX2_GS_RENDERER=null` in `debug.env` selects the deviceless renderer: no GPU context and no
+  picture, but the whole stream (GIF, privileged writes, VSync) runs. `ogl`/`vk` force a back end.
+
+## Emulator check of this fix (2026-11-06)
+
+- Deviceless run (`GT4_ARMSX2_GS_RENDERER=null`): the GS opens (`Null host device`), the stream starts and the VSyncs
+  advance for as long as the game runs — 2,700+ VSyncs in about 70 s, no abort (the crash happened on the *first*
+  VSync before). The GS thread cost was 0.6 ms/frame at 2x scale.
+- Normal GL run on the emulator: unchanged, it stops at the emulator's guest OpenGL ES 3.0 (the uber shader needs 3.1)
+  and returns cleanly — the emulator cannot show the Adreno path.

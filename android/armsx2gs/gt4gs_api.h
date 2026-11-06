@@ -46,8 +46,9 @@ typedef struct Gt4gsStartInfo {
   uint32_t surface_height;
   // Game serial for the GameDB lookup ("SCUS-97328"); may be NULL.
   const char *serial;
-  // 1 keeps the Vulkan back end when the library has it, 0 forces OpenGL ES, -1 lets the library choose (Vulkan first).
-  // A build without Vulkan (this one) always runs OpenGL ES.
+  // 1 keeps the Vulkan back end when the library has it, 0 forces OpenGL ES, 2 forces the deviceless (Null) renderer
+  // (no GPU context and no picture: a diagnosis path that still runs the whole stream), -1 lets the library choose
+  // (Vulkan first, then OpenGL ES). A build without Vulkan (this one) runs OpenGL ES unless 2 is given.
   int preferred_backend;
   // 1 asks for the performance numbers in the log every 300 VSYNCs (the game's own F8 report stays separate).
   int log_performance;

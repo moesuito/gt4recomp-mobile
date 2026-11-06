@@ -601,10 +601,19 @@ int gt4gs_start(const Gt4gsStartInfo *info) {
   // A build without Vulkan always runs the GLES back end (ARMSX2's own Android default); the setting is written so the
   // library's choice is visible in the log and in the shared settings file.
   const bool have_vulkan = gt4gs_has_vulkan() != 0;
-  const GSRendererType renderer =
-      (have_vulkan && s_preferred_backend != 0) ? GSRendererType::VK : GSRendererType::OGL;
+  GSRendererType renderer = have_vulkan ? GSRendererType::VK : GSRendererType::OGL;
+  switch (s_preferred_backend) {
+    case 0: renderer = GSRendererType::OGL; break;
+    case 1: renderer = have_vulkan ? GSRendererType::VK : GSRendererType::OGL; break;
+    case 2: renderer = GSRendererType::Null; break;  // deviceless: no GPU context and no picture, a diagnosis path
+    default: break;
+  }
   s_settings.SetIntValue("EmuCore/GS", "Renderer", static_cast<int>(renderer));
-  s_renderer_name = renderer == GSRendererType::VK ? "Vulkan" : "OpenGL ES";
+  switch (renderer) {
+    case GSRendererType::VK: s_renderer_name = "Vulkan"; break;
+    case GSRendererType::Null: s_renderer_name = "Null (deviceless)"; break;
+    default: s_renderer_name = "OpenGL ES"; break;
+  }
 
   s_source = std::make_unique<QueueSource>(s_serial);
   SetStream(s_source.get(), s_renderer_name.c_str(), kVersion);

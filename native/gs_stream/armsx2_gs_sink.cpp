@@ -142,6 +142,18 @@ bool start(std::string &error) {
   const std::string config = config_path();
   const std::string overrides = overrides_path();
   const char *scale = std::getenv("GT4_ARMSX2_GS_SCALE");
+  // 0 OpenGL ES, 1 Vulkan (a build that has it), 2 the deviceless (Null) renderer: no GPU and no picture, for a
+  // diagnosis run that still exercises the whole stream, -1 the library's own choice. debug.env sets
+  // GT4_ARMSX2_GS_RENDERER=null.
+  const char *renderer_choice = std::getenv("GT4_ARMSX2_GS_RENDERER");
+  int backend = -1;
+  if (renderer_choice != nullptr) {
+    if (std::strcmp(renderer_choice, "null") == 0 || std::strcmp(renderer_choice, "sw") == 0 ||
+        std::strcmp(renderer_choice, "software") == 0)
+      backend = 2;
+    else if (std::strcmp(renderer_choice, "ogl") == 0 || std::strcmp(renderer_choice, "gl") == 0) backend = 0;
+    else if (std::strcmp(renderer_choice, "vk") == 0 || std::strcmp(renderer_choice, "vulkan") == 0) backend = 1;
+  }
   StartInfo info{};
   info.data_root = root.c_str();
   info.config_path = config.c_str();
@@ -150,12 +162,13 @@ bool start(std::string &error) {
   info.surface_width = 0;
   info.surface_height = 0;
   info.serial = "SCUS-97328";
-  info.preferred_backend = -1;
+  info.preferred_backend = backend;
   info.log_performance = std::getenv("GT4_ARMSX2_GS_PERF") != nullptr ? 1 : 0;
   std::fprintf(stderr, "[gs] ARMSX2 GS in process: %s (%s), settings %s, extra %s, scale %s\n",
                lib.version != nullptr ? lib.version() : kLibraryName,
                lib.renderer_name != nullptr ? lib.renderer_name() : "?", config.c_str(), overrides.c_str(),
                scale != nullptr ? scale : "unset");
+  std::fprintf(stderr, "[gs] ARMSX2 GS renderer request: %s\n", renderer_choice != nullptr ? renderer_choice : "auto");
   if (lib.start(&info) != 0) {
     error = std::string("gt4gs_start failed: ") + (lib.last_error != nullptr ? lib.last_error() : "");
     return false;
