@@ -72,20 +72,21 @@ external files folder:
 `resources/` beside them holds `GameIndex.yaml` and the OpenGL ES shader sources, copied out of the APK assets by the
 launcher on Play.
 
-## Render scale (owner, 2026-11-06)
+## Render scale (owner, 2026-11-06; round 9)
 
 The separate "ARMSX2 GS resolution" row is gone. Both renderers take their internal resolution from the shared **Render
-scale** row, the same percentage-of-the-screen-height model as the PC (`display::percent_for_multiplier`: 1x is 448
-pixels of the screen's height, so 31% on a 1440-high screen and 83% on the S23's 1080-high landscape picture). The row's
-positions are the multipliers the chosen renderer takes: with the ARMSX2 GS its own 1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x,
-3x, 4x, 5x and 6x (a fractional one adds `ExtendedUpscalingMultipliers = true`), with CoreGS 2.0 the whole 1x..12x as
-before. The stored value is the percentage, so the label, the positions and the value are one number on every screen.
+scale** row: a percentage of the automatic multiplier `k = ceil(max(W / 640, H / 448))`, so 100% is `k` (never below the
+screen) and 50% is half of it. The multiplier is the accepted value nearest to `k x percentage`, ties up. The row's
+positions are the multipliers the chosen renderer takes: with the ARMSX2 GS the whole 1x..12x plus 1.25x, 1.5x, 1.75x and
+2.5x (a fractional one adds `ExtendedUpscalingMultipliers = true`), with CoreGS 2.0 the whole 1x..12x. The label names
+the 16:9 picture (640 x multiplier wide, `floor(width x 9 / 16)` tall: 2x is 1280x720). The stored value is the
+percentage, so the label, the positions and the value are one number on every screen.
 
-**The S23 default is 2x (83%).** The PC rule is the same 2x (`RENDER_SCALE_DEFAULT_MULTIPLIER = 2`), and on the S23's
-1080-high picture that percentage is exactly an ARMSX2 step, so nothing had to be lowered: 2x is what the previous build
-shipped and what the phone held at full speed. The reason not to go higher: 100% ("as tall as the screen") asks for
-2.5x on this screen, and the earlier 6x test (test1's notch model) ran the menus at 12 fps. A player who wants more can
-pick 100% or the steps above 2x in the row.
+**The phone's default stays 2x.** A fresh phone file takes the 2x default (`RENDER_SCALE_DEFAULT_MULTIPLIER`) and stores
+the percentage that gives it on that screen: 100% at 720p when the screen is 16:9 (k = 2), 67% at 1080p (k = 3) and 40% on
+the S23's 3088x1440 (k = 5). APK 103001507 (rc15/test6) shipped the previous model, the frame's height over the screen's
+height, where 2x was 83% at 1080p; the store migration (`render_scale_model = 3`) converts a stored percentage once by
+the multiplier it gave, so the phone keeps exactly the multiplier it runs today.
 
 ## Texture replacement (owner, 2026-11-06)
 

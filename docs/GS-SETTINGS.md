@@ -25,9 +25,10 @@ outside it is ignored with one warning line; gt4-gs never refuses to start becau
 
 - The `upscale` row ("Internal resolution") is no longer offered: `page = hidden` (order 22), still `written = always`
   and `status = ok`. The launcher writes `upscale_multiplier` from its display plan (`gt4l_core::display::display_plan`):
-  k = ceil(max(W / 640, H / 448)) for the chosen output size W x H, times the **Render scale** (a launcher row, 50% to
-  200% in steps of 25%, default 100%), rounded to a whole number (ties up) and clamped to 1..12. A stored `[gs] upscale`
-  is dropped by settings schema 5 and refused by `Settings::set_gs`.
+  k = ceil(max(W / 640, H / 448)) for the chosen output size W x H, times the **Render scale** (owner, 2026-11-06: a
+  launcher row where 100% is k; it offers the accepted multipliers and stores at most 200%), snapped to a multiplier the
+  renderer takes (whole numbers here, ties up) and clamped to 1..12. A stored `[gs] upscale` is dropped by settings
+  schema 5 and refused by `Settings::set_gs`.
 - **What gt4-gs accepts for upscale:** `[EmuCore/GS] upscale_multiplier` takes the whole numbers 1 to 12 only (the
   allow-list values `1|2|3|4|6|12|5|7|8|9|10|11`; no fractional multipliers, `ExtendedUpscalingMultipliers` is never
   written). gt4-gs lowers a value above the GPU's limit (max texture size / 1280: 12x on 16384-texel GPUs, 6x on 8192)

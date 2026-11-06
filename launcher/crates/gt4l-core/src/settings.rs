@@ -362,7 +362,7 @@ pub const SETTINGS: &[SettingDef] = &[
         page: Page::Graphics,
         group: "Image",
         title: "Render scale",
-        info: "How sharp the picture is drawn. 100% draws it at least at your resolution (taken from the Resolution                setting on the Display page); 50% is faster and softer, 200% is sharper and needs a much faster GPU.                The number next to the slider is the resulting internal resolution.",
+        info: "How sharp the picture is drawn. 100% is the automatic scale that covers your screen (taken from the Resolution setting on the Display page); below that it is faster and softer, above it is sharper and needs a much faster GPU. The number next to the control is the resulting internal resolution.",
         kind: Kind::Steps {
             min: crate::display::RENDER_SCALE_MIN,
             max: crate::display::RENDER_SCALE_MAX,

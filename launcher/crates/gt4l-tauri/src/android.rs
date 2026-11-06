@@ -555,8 +555,8 @@ struct DisplayInfo {
 }
 
 /// Reads the screen's current mode once (from a worker thread: the bridge answers through the main thread), then
-/// converts the Render scale with it: the row is a percentage of the screen's height, and a file written under the old
-/// model (or a new one, whose first value is the table's 100%) becomes this screen's default before the first Play, so
+/// converts the Render scale with it: the row is a percentage of the automatic multiplier, and a file written under an
+/// old model (or a new one, whose first value is the table's 100%) becomes this screen's value before the first Play, so
 /// the Settings page shows the value the phone will use (owner, 2026-11-06).
 fn load_screen(dirs: &DataDirs, shared: &Shared) {
     match bridge().and_then(|bridge| bridge.run_mobile_plugin::<DisplayInfo>("displayInfo", ()).map_err(|error| error.to_string())) {
@@ -1078,10 +1078,16 @@ pub fn play(shared: &Shared) -> Result<(), String> {
         card: &session_card,
         session_dir: &session_dir,
     };
-    // TASK-180 test2: the output is the phone's screen (100% = its native multiplier, as a monitor on the PC). The
-    // decision is logged, so a scale seen in the game can be traced to the setting it came from.
+    // TASK-180 test2: the output is the phone's screen, and 100% is the automatic multiplier k there (owner,
+    // 2026-11-06). The decision is logged, so a scale seen in the game can be traced to the setting it came from.
     let display = gt4l_core::display::resolve_target(&monitors, settings.get("monitor"), settings.get("resolution"));
-    let scale = launch::session_plan(&settings, display.as_ref(), false);
+    // PRIVATE test build: the ARMSX2 GS in the game process, beside CoreGS 2.0. The launch plan is the CoreGS one
+    // (same arguments, card and paths); the renderer variables and the settings files are replaced, and the CoreGS-only
+    // defaults are left out (the library reads none of them).
+    let armsx2 = settings.get("renderer") == gt4l_core::settings::ARMSX2_GS;
+    // The log names the plan the chosen renderer really runs (the ARMSX2 GS takes the fractional scales).
+    let caps = if armsx2 { gt4l_core::display::PCSX2_GS_FRACTIONAL_CAPS } else { gt4l_core::display::CORE_GS_CAPS };
+    let scale = launch::session_plan_for(&settings, display.as_ref(), caps);
     state::log(
         &dirs,
         &format!(
@@ -1094,10 +1100,6 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             screen().map(|(_, hertz)| format!("{hertz} Hz")).unwrap_or_else(|| "refresh unknown".to_string()),
         ),
     );
-    // PRIVATE test build: the ARMSX2 GS in the game process, beside CoreGS 2.0. The launch plan is the CoreGS one
-    // (same arguments, card and paths); the renderer variables and the settings files are replaced, and the CoreGS-only
-    // defaults are left out (the library reads none of them).
-    let armsx2 = settings.get("renderer") == gt4l_core::settings::ARMSX2_GS;
     let mut plan = launch::plan_coregs20_launch(&inputs, &settings, display.as_ref(), false, &textures, &[]);
     if armsx2 {
         plan.environment.retain(|(name, _)| !name.starts_with("GT4_HW_") && !name.starts_with("GT4_CORE2_"));

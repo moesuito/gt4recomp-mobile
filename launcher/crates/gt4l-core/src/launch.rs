@@ -398,6 +398,26 @@ pub fn session_plan(settings: &Settings, display: Option<&DisplayTarget>, integr
         .unwrap_or_else(|_| fallback())
 }
 
+/// [`session_plan`] with the multipliers a specific renderer accepts: the ARMSX2 GS takes the fractional scales too, so
+/// its session (and its log line) differs from CoreGS 2.0's whole-number plan.
+pub fn session_plan_for(
+    settings: &Settings,
+    display: Option<&DisplayTarget>,
+    caps: display::RendererCaps,
+) -> display::DisplayPlan {
+    let scale = settings.get("render_scale").parse::<u32>().unwrap_or(display::RENDER_SCALE_DEFAULT);
+    let output = display.map(|target| target.output).unwrap_or(display::FALLBACK_OUTPUT);
+    display::display_plan(output.width, output.height, scale, caps).unwrap_or_else(|_| {
+        display::display_plan(
+            display::FALLBACK_OUTPUT.width,
+            display::FALLBACK_OUTPUT.height,
+            display::RENDER_SCALE_DEFAULT,
+            caps,
+        )
+        .expect("1920x1080 at 100% is a valid plan")
+    })
+}
+
 /// The gt4-gs.ini text of a session, rendered from the table (`gs_table::render_ini`, same rules as
 /// scripts/gs_settings.py). The vsync and mailbox rows follow the present mode the way the probe does:
 /// fifo writes both true, mailbox writes mailbox false, immediate writes vsync false. `upscale_multiplier` comes from
@@ -488,9 +508,9 @@ pub fn armsx2_config_text(
         textures: textures.to_path_buf(),
     };
     let mut text = gs_config_text(settings, &gs_paths, None, false)?;
-    // The same rule as the PC's GSdx: the Render scale is a percentage of the screen's height over the game's 448
-    // lines. On the phone it lands between two whole multipliers, so it becomes the nearest one ARMSX2 can use
-    // (1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x, 3x, 4x, 5x, 6x); a fractional one turns ExtendedUpscalingMultipliers on.
+    // The same rule as the PC's GSdx: the Render scale is a percentage of the automatic multiplier k, snapped to what
+    // the ARMSX2 GS accepts (whole 1x..12x plus 1.25x, 1.5x, 1.75x and 2.5x); a fractional one turns
+    // ExtendedUpscalingMultipliers on.
     let multiplier = armsx2_multiplier(settings, display);
     let scale = format_multiplier(multiplier);
     text = text
@@ -554,39 +574,26 @@ pub fn armsx2_config_text(
     Ok(text)
 }
 
-/// The internal-resolution multipliers the ARMSX2 GS accepts with `ExtendedUpscalingMultipliers` on. The Render scale
-/// row lands between two of them on a phone screen; the nearest one is used.
-pub const ARMSX2_MULTIPLIERS: [f32; 10] = [1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0];
-
-/// The multiplier nearest to `wanted` among [`ARMSX2_MULTIPLIERS`] (ties go to the smaller one, so rounding never
-/// grows the internal resolution behind the player's back).
-pub fn armsx2_snap_multiplier(wanted: f32) -> f32 {
-    let mut best = ARMSX2_MULTIPLIERS[0];
-    let mut best_distance = f32::MAX;
-    for candidate in ARMSX2_MULTIPLIERS {
-        let distance = (candidate - wanted).abs();
-        if distance < best_distance || (distance == best_distance && candidate < best) {
-            best = candidate;
-            best_distance = distance;
-        }
-    }
-    best
-}
-
-/// The internal-resolution multiplier of a session: the PC's Render scale rule (the percentage of the screen's height
-/// over the game's 448 lines) snapped to what the ARMSX2 GS can use. No screen known falls back to the PC's 1920x1080.
+/// The internal-resolution multiplier of an ARMSX2 session: the shared Render scale plan (the percentage of the
+/// automatic multiplier `k`, snapped to the values the renderer accepts, fractional ones included). No screen known
+/// falls back to the PC's 1920x1080.
 pub fn armsx2_multiplier(settings: &Settings, display: Option<&DisplayTarget>) -> f32 {
     let percent = settings
         .get("render_scale")
         .parse::<u32>()
         .unwrap_or(display::RENDER_SCALE_DEFAULT);
     let output = display.map(|target| target.output).unwrap_or(display::FALLBACK_OUTPUT);
-    let height = output.height.min(output.width);
-    if height == 0 {
-        return 1.0;
-    }
-    let wanted = percent as f32 * height as f32 / (100.0 * display::NATIVE_FRAME_HEIGHT as f32);
-    armsx2_snap_multiplier(wanted)
+    let plan = display::display_plan(output.width, output.height, percent, display::PCSX2_GS_FRACTIONAL_CAPS)
+        .unwrap_or_else(|_| {
+            display::display_plan(
+                display::FALLBACK_OUTPUT.width,
+                display::FALLBACK_OUTPUT.height,
+                display::RENDER_SCALE_DEFAULT,
+                display::PCSX2_GS_FRACTIONAL_CAPS,
+            )
+            .expect("1920x1080 at 100% is a valid plan")
+        });
+    plan.multiplier as f32
 }
 
 /// `2` for a whole multiplier, `2.5` for a fractional one: what the ini and the row's label show.

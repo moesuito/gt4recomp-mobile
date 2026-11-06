@@ -225,7 +225,7 @@
   "setting.graphics_card.help": "A placa de vídeo que desenha o jogo. O automático escolhe a placa dedicada antes do vídeo integrado e, entre elas, a de mais memória de vídeo.",
   "choice.graphics_card.auto": "Automático (melhor)",
   "setting.render_scale.label": "Escala de renderização",
-  "setting.render_scale.help": "O quão nítida é a imagem. 100% a desenha pelo menos na sua resolução (definida pela opção Resolução na página Tela); 50% é mais rápido e mais suave, 200% é mais nítido e exige uma placa de vídeo bem mais rápida. O número ao lado do controle é a resolução interna resultante.",
+  "setting.render_scale.help": "O quão nítida é a imagem. 100% é a escala automática que cobre a sua tela (definida pela opção Resolução na página Tela); abaixo disso é mais rápido e mais suave, acima é mais nítido e exige uma placa de vídeo bem mais rápida. O número ao lado do controle é a resolução interna resultante.",
   "setting.armsx2_api.label": "API gráfica do ARMSX2 GS",
   "setting.armsx2_api.help": "O Automático deixa a API gráfica com o próprio ARMSX2 GS (Vulkan quando esta build o traz, OpenGL ES caso contrário), então as regras por GPU dele continuam no comando. O Vulkan é experimental: o ARMSX2 o deixa fora da escolha de renderizador no Android por causa de erros de mistura (blending), e esta build pode nem trazê-lo (o log do jogo então avisa e continua no OpenGL ES).",
   "choice.armsx2_api.auto": "Automático",

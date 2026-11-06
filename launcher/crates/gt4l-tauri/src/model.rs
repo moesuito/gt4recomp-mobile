@@ -145,58 +145,44 @@ fn fill_resolution_row(row: &mut Value, settings: &Settings, monitors: &[Monitor
     }
 }
 
-/// The Render scale row (TASK-180 test3, owner 2026-11-05): one position per whole multiplier the renderer accepts,
-/// labelled with the percentage of the screen's height it gives there ("31% · 1x · 640x448"), for the output the game
-/// would use now (1920 x 1080 when no monitor is known). The arrows step from one multiplier to the next, and the value
-/// it stores is the percentage in the label, so the label, the positions and the stored value are one formula
-/// (`display::render_scale_steps_for`); the same on every platform.
+/// The Render scale row (owner, 2026-11-06): one position per multiplier the renderer accepts, labelled with the
+/// percentage of the automatic multiplier it gives there and the 16:9 picture of that multiplier ("100% · 3x ·
+/// 1920x1080"), for the output the game would use now (1920 x 1080 when no monitor is known). The value it stores is
+/// the percentage in the label, so the label, the positions and the stored value are one formula
+/// (`display::render_scale_choices`); the same on every platform.
 fn fill_render_scale_row(row: &mut Value, settings: &Settings, monitors: &[Monitor], _integrated_gpu: bool, _platform: Platform) {
     let output = display::resolve_target(monitors, settings.get("monitor"), settings.get("resolution"))
         .map(|target| target.output)
         .unwrap_or(display::FALLBACK_OUTPUT);
-    let caps = display::RendererCaps { max_multiplier: MAX_UPSCALE_DEFAULT };
-    let height = output.height.min(output.width).max(1);
-    let stored = settings.get("render_scale").parse::<u32>().unwrap_or(display::RENDER_SCALE_DEFAULT);
-    // One position per multiplier the chosen renderer accepts, labelled with the percentage of the screen's height it
-    // gives there and the internal size. The ARMSX2 GS takes its own multipliers (1x, 1.25x, ... 6x), so on the phone
-    // the same percentage model lands on one of those; CoreGS 2.0 keeps one position per whole multiplier.
-    let armsx2 = settings.get("renderer") == gt4l_core::settings::ARMSX2_GS;
-    let percent_of = |multiplier: f32| -> u32 {
-        ((display::NATIVE_FRAME_HEIGHT as f32 * multiplier * 100.0 / height as f32).round() as u32)
-            .clamp(display::RENDER_SCALE_MIN, display::RENDER_SCALE_MAX)
-    };
-    let label = |percent: u32, multiplier: f32| -> String {
-        format!(
-            "{percent}% · {}x · {}x{}",
-            gt4l_core::launch::format_multiplier(multiplier),
-            (display::NATIVE_FRAME_WIDTH as f32 * multiplier).round() as u32,
-            (display::NATIVE_FRAME_HEIGHT as f32 * multiplier).round() as u32
-        )
-    };
-    let mut options: Vec<Value> = Vec::new();
-    let current: u32;
-    if armsx2 {
-        for multiplier in gt4l_core::launch::ARMSX2_MULTIPLIERS {
-            let percent = percent_of(multiplier);
-            if options.iter().any(|option| option["value"] == json!(percent.to_string())) {
-                continue;
-            }
-            options.push(json!({ "value": percent.to_string(), "label": label(percent, multiplier) }));
-        }
-        let wanted = stored as f32 * height as f32 / (100.0 * display::NATIVE_FRAME_HEIGHT as f32);
-        current = percent_of(gt4l_core::launch::armsx2_snap_multiplier(wanted));
+    // The ARMSX2 GS takes fractional scales too (1.25x, 1.5x, 1.75x, 2.5x); CoreGS 2.0 keeps whole multipliers.
+    let caps = if settings.get("renderer") == gt4l_core::settings::ARMSX2_GS {
+        display::PCSX2_GS_FRACTIONAL_CAPS
     } else {
-        for percent in display::render_scale_steps_for(height, caps) {
-            let multiplier = display::multiplier_for_percent(percent, height, caps) as f32;
-            options.push(json!({ "value": percent.to_string(), "label": label(percent, multiplier) }));
-        }
-        current = display::percent_for_multiplier(display::multiplier_for_percent(stored, height, caps), height);
+        display::CORE_GS_CAPS
+    };
+    let stored = settings.get("render_scale").parse::<u32>().unwrap_or(display::RENDER_SCALE_DEFAULT);
+    let plan = display::display_plan(output.width, output.height, stored, caps)
+        .or_else(|_| display::display_plan(output.width, output.height, display::RENDER_SCALE_DEFAULT, caps))
+        .unwrap_or_else(|_| {
+            display::display_plan(
+                display::FALLBACK_OUTPUT.width,
+                display::FALLBACK_OUTPUT.height,
+                display::RENDER_SCALE_DEFAULT,
+                caps,
+            )
+            .expect("1920x1080 at 100% is a valid plan")
+        });
+    let mut options: Vec<Value> = Vec::new();
+    for (percent, multiplier) in display::render_scale_choices(output, caps) {
+        let (width, height) = display::label_size(multiplier);
+        let label = format!("{percent}% · {}x · {width}x{height}", gt4l_core::launch::format_multiplier(multiplier as f32));
+        options.push(json!({ "value": percent.to_string(), "label": label }));
     }
     row["control"] = json!("dropdown");
     row["values"] = Value::Array(options);
-    row["current"] = json!(current.to_string());
+    row["current"] = json!(display::percentage_for_multiplier(plan.multiplier, output, caps).to_string());
     row["output"] = json!(output.text());
-    row["default"] = json!(display::render_scale_default_for(height).to_string());
+    row["default"] = json!(display::default_percentage(output, caps).to_string());
 }
 
 /// The settings table with the connected monitors (TASK-080 addendum: Monitor, Resolution and Render scale).
@@ -1199,10 +1185,10 @@ mod table_tests {
         let android = settings_table_for(Platform::Android, &settings, &Controls::default(), &[screen.clone()], &[], false);
         let scale = row(&android, "render_scale");
         assert_eq!(scale["output"], "3088x1440");
-        assert_eq!(scale["values"][0]["label"], "31% · 1x · 640x448", "1x is not 0% any more");
-        assert_eq!(scale["values"][1]["label"], "62% · 2x · 1280x896");
+        assert_eq!(scale["values"][0]["label"], "20% · 1x · 640x360", "1x on this screen, as a percentage of k = 5");
+        assert_eq!(scale["values"][1]["label"], "40% · 2x · 1280x720");
         let windows = settings_table_for(Platform::Windows, &Settings::default(), &Controls::default(), &[screen], &[], false);
-        assert_eq!(row(&windows, "render_scale")["values"][0]["label"], "31% · 1x · 640x448", "the same formula");
+        assert_eq!(row(&windows, "render_scale")["values"][0]["label"], "20% · 1x · 640x360", "the same formula");
     }
 
     #[test]
@@ -1337,14 +1323,14 @@ mod table_tests {
         let resolution = row(&table, "resolution");
         assert_eq!(resolution["current"], "2560x1080");
         assert_eq!(resolution["values"][0]["label"], "3440x1440 (desktop)");
-        // TASK-180 test3: one position per multiplier, labelled with the percentage of the 1080-pixel height it gives.
+        // One position per multiplier, labelled with the percentage of k = 4 it gives and the 16:9 picture.
         let scale = row(&table, "render_scale");
         assert_eq!(scale["control"], "dropdown");
-        assert_eq!(scale["values"][0]["value"], "41", "1x is 448 of 1080 pixels");
-        assert_eq!(scale["values"][0]["label"], "41% · 1x · 640x448");
-        assert_eq!(scale["values"][1]["label"], "83% · 2x · 1280x896");
-        assert_eq!(scale["values"][2]["label"], "124% · 3x · 1920x1344");
-        assert_eq!(scale["values"].as_array().unwrap().len(), 12, "every multiplier the renderer accepts");
+        assert_eq!(scale["values"][0]["value"], "25", "1x is a quarter of k = 4");
+        assert_eq!(scale["values"][0]["label"], "25% · 1x · 640x360");
+        assert_eq!(scale["values"][1]["label"], "50% · 2x · 1280x720");
+        assert_eq!(scale["values"][2]["label"], "75% · 3x · 1920x1080");
+        assert_eq!(scale["values"].as_array().unwrap().len(), 8, "200% of k = 4 reaches 8x");
     }
 
     /// TASK-180 test3 fix (owner, 2026-11-05): the owner's phone lost the Performance report row and the F7/F8 touch
@@ -1414,8 +1400,8 @@ mod table_tests {
             let table = settings_table_for(platform, &Settings::default(), &Controls::default(), &[], &[], false);
             let scale = row(&table, "render_scale");
             assert_eq!(scale["output"], "1920x1080", "{platform:?}");
-            assert_eq!(scale["values"][0]["label"], "41% · 1x · 640x448", "{platform:?}");
-            assert_eq!(scale["current"], "83", "{platform:?}: the stored 100% lands on 2x of 1080 (83%)");
+            assert_eq!(scale["values"][0]["label"], "33% · 1x · 640x360", "{platform:?}");
+            assert_eq!(scale["current"], "100", "{platform:?}: the stored 100% is k = 3 on 1080p");
         }
     }
 
@@ -1425,9 +1411,9 @@ mod table_tests {
         assert_eq!(row(&table, "monitor")["current"], "primary");
         assert_eq!(row(&table, "resolution")["current"], "desktop");
         let scale = row(&table, "render_scale");
-        assert_eq!(scale["control"], "dropdown", "one position per multiplier (TASK-180 test3)");
-        assert_eq!(scale["current"], "83", "2x of 1080, the position the stored 100% lands on");
-        assert_eq!(scale["values"][1]["label"], "83% \u{00B7} 2x \u{00B7} 1280x896");
+        assert_eq!(scale["control"], "dropdown", "one position per multiplier");
+        assert_eq!(scale["current"], "100", "the stored 100% is k = 3 on 1080p");
+        assert_eq!(scale["values"][1]["label"], "67% \u{00B7} 2x \u{00B7} 1280x720");
         assert!(scale.get("visible_when").is_none(), "shown under both renderers");
         assert_eq!(scale["group"], "graphics");
     }

@@ -29,9 +29,10 @@ pub struct ConfigFile {
     /// The game the home screen shows (`[game] selected`, schema 8, TASK-101): the first game installed, then the game
     /// played last. `None` before any game is installed. An id the launcher does not know reads as `None`.
     pub selected_game: Option<String>,
-    /// `[install] render_scale_model` (schema 9, TASK-180 test3): 2 when `render_scale` is a percentage of the screen's
-    /// height (the current meaning), 1 for a file written under the old one-notch-of-25% model. A file without the key is
-    /// model 1, which `state::migrate_render_scale` converts with the screen in hand.
+    /// `[install] render_scale_model`: 3 when `render_scale` is a percentage of the automatic multiplier (the current
+    /// meaning, owner 2026-11-06), 2 when it was the internal frame's height over the screen's height (TASK-180 test3),
+    /// 1 for a file written under the old one-notch-of-25% model. A file without the key is model 1, and
+    /// `state::migrate_render_scale` converts any older value with the screen in hand.
     pub render_scale_model: u32,
 }
 

@@ -192,15 +192,17 @@ pub fn log(dirs: &DataDirs, message: &str) {
     crate::session_log::write(dirs, gt4l_core::logs::Level::Info, message);
 }
 
-/// TASK-180 test3 (owner's phone): the Render scale written before schema 9 is a notch of the screen's native multiplier,
-/// not the percentage of the screen's height the row shows now. Converted once, with the screen and GPU of this launch:
-/// Windows keeps the multiplier the player had, Android goes to the 2x default (the phone's values were never chosen as
-/// percentages). A screen that cannot be read leaves the file alone; the next start converts it. Returns what it did.
+/// The Render scale is a percentage of the automatic multiplier (owner, 2026-11-06). Converted once, with the screen of
+/// this launch, from either older model, keeping the multiplier the player had:
+/// - model 1: a notch of the screen's own multiplier (before TASK-180 test3). Windows keeps its multiplier; Android
+///   goes to the 2x default, because the phone's values were never chosen as percentages.
+/// - model 2: the internal frame's height as a percentage of the screen's height (TASK-180 test3 to round 9).
+/// A screen that cannot be read leaves the file alone; the next start converts it. Returns what it did.
 pub fn migrate_render_scale(config: &mut ConfigFile, dirs: &DataDirs) -> bool {
     match monitors_for_scale().first().map(|monitor| monitor.desktop) {
         Some(screen) => migrate_render_scale_at(screen, config, dirs),
         None => {
-            if config.render_scale_model < 2 {
+            if config.render_scale_model < 3 {
                 log(dirs, "settings: the Render scale is from the old scale model; the screen is not known yet, Play converts it");
             }
             false
@@ -210,23 +212,32 @@ pub fn migrate_render_scale(config: &mut ConfigFile, dirs: &DataDirs) -> bool {
 
 /// [`migrate_render_scale`] for a known screen size (Android's Play converts once the screen has been read).
 pub fn migrate_render_scale_at(screen: display_rules::Size, config: &mut ConfigFile, dirs: &DataDirs) -> bool {
-    if config.render_scale_model >= 2 {
+    if config.render_scale_model >= 3 {
         return false;
     }
     let stored = config.settings.get("render_scale").parse::<u32>().unwrap_or(display_rules::RENDER_SCALE_DEFAULT);
-    // The old model climbed from the screen's own multiplier (k) on a discrete card, which is what a PC's plan used for
-    // the stored notches; an integrated GPU's untouched 100% was 1x, and that value is converted like any other notch.
-    let integrated = false;
-    let (percent, line) = display_rules::migrate_render_scale(
-        stored,
-        screen,
-        integrated,
-        display_rules::RendererCaps { max_multiplier: crate::model::MAX_UPSCALE_DEFAULT },
-        cfg!(target_os = "android"),
-    );
+    let caps = display_rules::RendererCaps { max_multiplier: crate::model::MAX_UPSCALE_DEFAULT, fractional: false };
+    let old_multiplier = if config.render_scale_model == 1 {
+        if cfg!(target_os = "android") {
+            // The phone's notches were never percentages the player chose: the default 2x is what it ran.
+            display_rules::RENDER_SCALE_DEFAULT_MULTIPLIER
+        } else {
+            // An integrated GPU's untouched 100% was 1x (issue #89); that is read as any other notch.
+            display_rules::notch_multiplier(stored, screen, false, caps)
+        }
+    } else {
+        display_rules::old_multiplier_for_percent(stored, screen.height.min(screen.width).max(1))
+    };
+    let percent = display_rules::percentage_for_multiplier(old_multiplier as f64, screen, caps);
     let _ = config.settings.set("render_scale", &percent.to_string());
-    config.render_scale_model = 2;
-    log(dirs, &line);
+    config.render_scale_model = 3;
+    log(
+        dirs,
+        &format!(
+            "settings: render_scale {stored} was stored under the old scale model; it meant {old_multiplier}x on this screen ({} at 100%), stored as {percent}% of the automatic multiplier",
+            display_rules::base_multiplier(screen.width, screen.height)
+        ),
+    );
     true
 }
 

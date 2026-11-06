@@ -133,10 +133,11 @@ pub const SETTINGS: Chain = Chain {
     ],
 };
 
-/// Schema 9 (TASK-180 test3): the Render scale is a percentage of the screen's height; it used to be a notch of the
+/// Schema 9 (TASK-180 test3): the Render scale became a percentage of the screen's height; it used to be a notch of the
 /// screen's native multiplier. A schema 8 file's `render_scale` is in the old meaning, and this step records that in the
-/// file (`[install] render_scale_model = 1`); the launcher then converts the value with the screen in hand and writes 2
-/// (`state::migrate_render_scale`). Nothing else changes.
+/// file (`[install] render_scale_model = 1`); the launcher then converts the value with the screen in hand
+/// (`state::migrate_render_scale`, which writes model 3, the percentage of the automatic multiplier, owner 2026-11-06).
+/// Nothing else changes.
 fn settings_8_to_9(document: &mut Value) -> Result<(), String> {
     let table = document.as_object_mut().ok_or("settings.toml: the document is not a table")?;
     let install = table.entry("install".to_string()).or_insert_with(|| Value::Object(serde_json::Map::new()));
