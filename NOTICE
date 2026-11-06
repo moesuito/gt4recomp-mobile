@@ -1,0 +1,21 @@
+GT4Recomp for Android (source only)
+===================================
+
+This repository combines two bodies of code:
+
+- GT4Recomp, by João Alano and the GT4Recomp contributors, taken from
+  https://github.com/moesuito/gt4-staticrecomp and used under its MIT licence. Its files keep their
+  `SPDX-License-Identifier: MIT` notices and copyright lines.
+- ARMSX2, by the ARMSX2 developers, which derives from PCSX2, by the PCSX2 developers. The imported tree lives in
+  `third_party/armsx2/` and is licensed GPL-3.0-or-later; its licence text is `third_party/armsx2/COPYING.GPLv3`.
+
+The combined work is distributed under the GNU General Public License, version 3 or later: see `LICENSE`.
+
+Third-party libraries vendored inside `third_party/armsx2/` keep their own licences and copyright notices in their
+directories. The shader compiler sources fetched by `tools/fetch_armsx2_shader_deps.py` (glslang, SPIRV-Headers and
+SPIRV-Tools) are not part of this repository; they are fetched from their official repositories at the revisions
+shaderc pins, and keep their own licences.
+
+No game code, game data or build output is included. Gran Turismo 4 is a trademark of Sony Interactive Entertainment;
+this project is not affiliated with Sony. The official, supported GT4Recomp release is the one in
+https://github.com/moesuito/gt4-staticrecomp.
