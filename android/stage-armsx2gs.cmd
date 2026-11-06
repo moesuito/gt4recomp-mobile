@@ -21,10 +21,14 @@ if not exist "%JNI%" mkdir "%JNI%"
 if not exist "%ASSETS%" mkdir "%ASSETS%"
 "%GT4_ANDROID_NDK%\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe" --strip-debug -o "%JNI%\libgt4gs.so" "%BUILD%\gt4gs\libgt4gs.so" || exit /b 1
 copy /y "%VENDOR%\bin\resources\GameIndex.yaml" "%ASSETS%\GameIndex.yaml" >nul || exit /b 1
+rem The fonts the Performance HUD and the OSD use: the same RobotoMono-Medium the CoreGS HUD shows (owner, 2026-11-06,
+rem round 5: the ARMSX2 panel used the plain Roboto fallback because these were missing).
+if exist "%ASSETS%\fonts" rmdir /s /q "%ASSETS%\fonts"
+xcopy /e /i /y /q "%VENDOR%\bin\resources\fonts" "%ASSETS%\fonts" >nul || exit /b 1
 rem Replace the staged tree so a removed resource cannot linger from an earlier staging.
 if exist "%ASSETS%\shaders" rmdir /s /q "%ASSETS%\shaders"
 xcopy /e /i /y /q "%VENDOR%\bin\resources\shaders" "%ASSETS%\shaders" >nul || exit /b 1
-echo staged %ABI%: libgt4gs.so, GameIndex.yaml, shaders (opengl + common)
+echo staged %ABI%: libgt4gs.so, GameIndex.yaml, shaders (opengl + common), fonts (RobotoMono)
 exit /b 0
 :usage
 echo usage: stage-armsx2gs.cmd ^<arm64-v8a^> ^<armsx2-core build folder^>

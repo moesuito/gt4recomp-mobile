@@ -396,8 +396,11 @@ void DrawHud() {
   const float height = io.DisplaySize.y > 0.0f ? io.DisplaySize.y : 1080.0f;
   const float width = io.DisplaySize.x > 0.0f ? io.DisplaySize.x : 1920.0f;
   const float size = std::clamp(std::round(height / 1080.0f * 16.0f), 12.0f, 44.0f);
-  const float line = std::ceil(size * 1.0f);
-  const float pad = std::max(4.0f, line * 0.5f);
+  // CoreGS's font is the system monospace face at `size` px, whose cell is 19 px high at 16 (ascent + descent, the GDI
+  // tmHeight rule) and 10 px wide. The bundled RobotoMono-Medium is the same face the PCSX2 ImGui uses; its line box is
+  // size * 19/16 and its cell advance is the one below.
+  const float line = std::ceil(size * (19.0f / 16.0f));
+  const float pad = std::max(4.0f, std::floor(line * 0.5f));
   const float cell = CellWidth(font, size);
   const int columns = s_mode == 1 ? kFpsColumns : kColumns;
   const bool with_graph = s_mode == 2;
