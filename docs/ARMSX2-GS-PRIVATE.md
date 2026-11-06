@@ -47,8 +47,11 @@ launcher's ARMSX2 renderer runs OpenGL ES. The Vulkan path is a rebuild away the
 - `EeFpuModel.h`: NDK 26.1 is clang 17, whose AArch64 backend refuses `__attribute__((preserve_all))`; the documented
   wide-spill fallback is used (`-DGT4GS_NO_PRESERVE_ALL`).
 - `HeapArray.h`: libc++ 17 has no `std::lexicographical_compare_three_way`; the same comparison is written out.
-- `GSDumpReplayer.cpp` / `VMManager.cpp`: the three hooks the owner's fork frontend uses (`GT4GSStreamHook.h`) so the GS
-  boots without a BIOS or a disc and the CPU provider is the record loop.
+- `GSDumpReplayer.cpp` / `VMManager.cpp`: the hooks the owner's fork frontend uses (`GT4GSStreamHook.h`) so the GS
+  boots without a BIOS or a disc and the CPU provider is the record loop; the dump serial and CRC answer 0 for a stream.
+- `GSDumpReplayer.cpp` / `GS/Renderers/Common/GSRenderer.cpp` (2026-11-06): the dump-replay overlay returns when there is
+  no dump file, and the end-of-present path ends the present and returns while a stream runs (no overlay, fullscreen UI,
+  OSD or ImGui frame). This is the first-VSync crash fix; see the section below.
 
 ## Settings
 
