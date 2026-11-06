@@ -78,6 +78,8 @@ android {
             // The game library comes staged without line tables but with its symbol table (android/stage-native-libs.cmd):
             // a tombstone then names the crashing function.
             keepDebugSymbols.add("**/libgt4.so")
+            // TASK-180 test5: the Spec II library, packaged beside v2.00's and loaded only when that game runs.
+            keepDebugSymbols.add("**/libgt4spec2.so")
         }
     }
     kotlinOptions {

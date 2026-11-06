@@ -428,13 +428,45 @@ build's first fix.
 - **Still open:** unified-memory phase 2 (phase 2 of the study: the final picture drawn straight into the swapchain image
   with pre-rotation, `GT4_HW_PRESENT_DIRECT`) and Spec II on Android (below).
 
+## Test APK 5: `1.3.0-android-test5` (TASK-180, 2026-11-06)
+
+The owner paused the CoreGS 2.0 optimisation work on 2026-11-06; this build keeps the exact TASK-182 savings and delivers
+the Performance Mode split and Spec II.
+
+- **TASK-182 step 3** (`task/182-barrier-scope` at 54d2a0f4): newest-fence readback wait (on), bounded spin (off), K rule
+  device default (8 on a tiler or unified-memory GPU, 0 on a discrete one); Android sets `GT4_CORE2_SUBMIT_EVERY=128`
+  (S23 bench +11.6% VBlanks/s, 32% fewer render passes) and K is clamped to it.
+- **Performance Mode replaced by independent effect toggles**, on by default, on the Graphics page for both renderers:
+  - *Sun glare and light flares* (one toggle): the 64 x 8 visibility table is answered as zeros, so neither is drawn and
+    the readback wait is gone. One table feeds both (IN-441), so a split would need a guess.
+  - *Road sheen* (CoreGS 2.0 only): the full-screen pass and its alpha-lane fills are left out; the GSdx path has no batch
+    classifier on the game side, so the row is not offered there.
+  - Switches `GT4_CORE2_PERF_FLARES` / `GT4_CORE2_PERF_ROAD_SHEEN` (1 = off); `GT4_CORE2_PERFORMANCE=1` still turns all
+    off; the GSdx path's `GT4_GS_HIDE_FLARES` is set from the flare toggle and the stream client also accepts the new name.
+    gt4-gs's fast download mode is written only when the flares are off.
+- **Spec II:** hooked unit set regenerated (`scripts/camera360_units.py spec2`), `libgt4spec2.so` for arm64, both
+  libraries packaged, the game Activity loads the chosen game's library, and Play/bench use the game's own ELF. The
+  emulator boot test is pending the pinned ISO (see below).
+
 ### Spec II on Android: what a later build needs
 
-Spec II is **not** in test3: the APK ships `libgt4.so` (v2.00) only, and a `GT4_BENCH_GAME=spec2` bench is refused with a
-message instead of starting the wrong library. The groundwork is in place — `android/native/CMakeLists.txt` accepts
-`-DGT4_TARGET=spec2` and names the library `libgt4spec2.so`, and `android/native/configure-android-spec2.cmd` holds the
-Spec II arm64 recipe (its units, hook manifest, `slice276-spec2-iop-runtime`, `slice394-spec2-vu0-gen`, the same
-`-ffp-contract=off` and 16 KB pages). What is missing, in order:
+**Status in test5:** steps 1-3 are done and step 4 is pending the disc image.
+
+1. **Done (test5).** The hooked Spec II unit set was regenerated with `scripts/camera360_units.py spec2` from
+   `private/slice405-spec2-aspect-producer/generated` into `build/android-inputs/spec2-units-rc14b-hooked` (348 units, the
+   manifest's source inventory), because the pre-hook copy fails the manifest's `sha256_after` pins.
+2. **Done.** `libgt4spec2.so` links for `arm64-v8a` from `android/native/configure-android-spec2.cmd` (with
+   `GT4_EE_UNITS_DIR` pointed at the hooked set), and `android/stage-native-libs.cmd` stages both libraries into `jniLibs`
+   (`libgt4.so` and `libgt4spec2.so`), each stripped of line tables but keeping its symbol table.
+3. **Done.** The launcher passes `GAME=gt4|spec2`, `GameActivity.getLibraries()` loads `gt4spec2` for Spec II (and logs
+   it), Play uses the game's own ELF and the library name, and a `GT4_BENCH_GAME=spec2` bench is allowed. The disc, card,
+   saves and settings were already per game.
+4. **Pending.** The emulator check that Spec II reaches its title screen at 1x needs the pinned image
+   (`docs/inputs/spec2-iso.json`, sha256 `6a3484b9…`); this PC holds two PTBR Spec II builds (`fe8b51cf…`, `96557472…`)
+   that the identity check refuses by design. On a phone, Play installs Spec II through the same Storage Access Framework
+   pick as v2.00.
+
+The original checklist, kept for the record, was:
 
 1. **The hooked Spec II unit set.** The translated Spec II units in `private/slice405-spec2-aspect-producer/generated` are
    the pre-hook set, so the build stops on the manifest's `sha256_after` pins. Regenerate them with

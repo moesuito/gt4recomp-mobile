@@ -700,3 +700,223 @@ effect. The 480p races are unchanged (they deinterlace nothing).
   the pixels, so its cost is dominated by per-pass and per-barrier work, not by the kernel's arithmetic. The skip removes
   work inside the kernel and should pay in proportion to the decision share there; that share is unmeasured on Adreno.
 - **Skipping an unchanged frame, present, and `GT4_CORE2_POST_AT_SCREEN`** are unchanged from section 6 of step 2b.
+
+## Step 3: the two cheapest exact asynchronies around the readback (rows 2 and 5)
+
+Date 2026-11-05, same branch (`task/182-barrier-scope`) and the same **not PCSX2-tainted** status as steps 1-2c: no PCSX2
+source, no `gt4recomp-gs` fork, no `private/tooling/pcsx2-*`, no `private/slice189-pcsx2-ref` opened. The outside input is
+the clean-room prose of `STUDY-ASYNC-READBACK.md` (9.1 rows 2 and 5, section 2) and `STUDY-FRAME-DOWNLOAD-COST.md` (9.3,
+9.6). Neither change touches what is drawn: both move *when the CPU waits* and *when it submits*, never a command, a
+barrier or a memory-write order.
+
+### 1. The two rows
+
+**Row 2, the K rule** (TASK-178). `GT4_CORE2_SUBMIT_AFTER_WAIT=K` sends the first mid-frame submission after a waited
+readback K draw batches later instead of `submitEvery` batches later. A readback drains the queue, so when the GS worker
+resumes the GPU has nothing queued and everything the worker records until its next submission is GPU idle. K shortens
+that bubble. Exact because submission boundaries never change what is drawn (TASK-178 9.2: the same flare reply hashes at
+K = 0, 8, 16, 32 and `gates6 wrong=0`). It shipped in rc15 with K = 0 by default, waiting for an A/B.
+
+**Row 5, O2.** When the GS worker must wait for a readback, `wait_all` waited for **every slot's fence** (up to 16
+`vkWaitForFences`). One fence is enough; section 2 is the argument, and section 3 the optional spin.
+
+### 2. O2: exactly one fence, and why it is the same wait
+
+Every submission of `Gpu` goes to the one queue `queue`, in `vkQueueSubmit` order. Vulkan signals a submission's fence only
+after that submission **and every submission before it on the same queue** have completed (Vulkan 1.3 spec, fences: "if a
+fence is signaled, then all commands submitted before it ... have completed"). `Reduce`, `ReduceMany` and `ReadClut` hand
+the read's recording to `submit(true)`, so at the wait the read's submission **is** the newest one. Waiting for its fence
+therefore implies every earlier slot's completion - exactly what waiting for all of them returned - and the guest bytes, the
+GS-memory write-back and the reduced words become visible at the same instant. Nothing observable moves; the number of
+blocking driver calls falls from up to 16 to one, and with it the number of scheduler wake-ups (9.1 row 5's "no 16
+sequential `vkWaitForFences` calls"; `10-readbacks-and-sync.md` 10.5 already asked for the same thing for HWR).
+
+The older in-flight slots keep their own bookkeeping (their timestamps are read and their doomed images released inside
+`wait_slot`) until their slot is reused by `begin_recording` - which waits for it there - or until the final drain. That is
+the same work at the same total cost as before, only off the read's critical path instead of on it: the first version of
+this change waited for the older fences too (they return immediately once the newest signalled), and the A/B showed the
+bookkeeping it moved after the wait cost 0.1-0.3 ms per drain, which is why it is deferred now. A submission whose slot is
+still marked in flight is never reused before `begin_recording` waits for it, and `~Gpu` waits for every slot before it
+destroys the images and query pools. `GT4_CORE2_WAIT_NEWEST_FENCE=0` restores the slot-by-slot wait for the A/B. The code
+comment in `Gpu::Impl::wait_newest` carries the same argument.
+
+### 3. The bounded spin
+
+`GT4_HW_READBACK_SPIN` was parsed for the donor renderer (TASK-087) and documented in `10-readbacks-and-sync.md` 10.5, but
+core 2 had no consumer for it. It now spins on the read's fence before blocking: `vkWaitForFences` with a timeout of 0 in a
+loop, bounded by a wall budget (`=1`: 200 us; a larger number: that many microseconds, capped at 100 ms). A poll that sees
+the fence signalled returns at once and skips the blocking call; a poll that does not costs at most the budget and then
+blocks as before. Same semantics, one fewer trip through the driver's wait queue. Default off (0 or unset).
+
+### 4. The device default of the K rule
+
+`hw_device_profile.hpp` gains `unified_memory` - a memory type that is both device-local and host-visible, the Vulkan test
+for "the CPU and the GPU share this memory" - filled by `probe_device_profile` from the memory types next to the heaps, and
+three pure functions: `k_rule_default_on`, `k_rule_default_batches` and `k_rule_default_reason`. `Gpu::Init` classifies
+the physical device itself when the device's creator did not probe it, so a fixture or a test path never lands on a
+"discrete" default by accident.
+
+| Device class | K by default | Why |
+|---|---|---|
+| `tiler_or_unknown` (Adreno, Mali, PowerVR, Apple, Xclipse, software, virtual) | **8** | tile-based: a drain is a full pipeline flush and the CPU is slow against the GPU |
+| `integrated` with `unified_memory` or the integrated device type | **8** | an APU: one memory for both, so the GPU competes with the recording CPU |
+| `integrated` without either | 0 | its own memory, no evidence |
+| `discrete` | **0** | the desktop A/B (section 6) |
+
+Two findings worth keeping:
+- **This desktop reports a device-local host-visible memory type.** The RX 9060 XT (resizable BAR) exposes a
+  `DEVICE_LOCAL | HOST_VISIBLE` type, so the raw unified-memory bit is *yes* on a discrete card (the `[hw] device profile`
+  line says so). The class therefore wins over the bit: a discrete GPU stays at K = 0 whatever its memory types report,
+  and the fixture pins that case.
+- The device default is clamped to `GT4_CORE2_SUBMIT_EVERY`, so a user who asked for a cadence below 8 (or for
+  submissions only when needed, `0`) never has it silently lengthened.
+
+The K, its reason and the wait mode are in game.log in every run, and both switches still override:
+
+```
+[core2] submissions: 16 slots, every 64 batches, after a wait 0 batches (TASK-182 step 3: device default, discrete GPU; 0 = off)
+[core2] readback wait: newest fence only (GT4_CORE2_WAIT_NEWEST_FENCE=1), block at once (GT4_HW_READBACK_SPIN off)
+```
+
+The 600-VBlank download line carries the new counters: `newest_fence_waits/vblank`, `spin_polls/vblank (hits ...)`.
+
+### 5. Identity (C)
+
+Four configurations of the same build, headless, Spec II press scenes, full 9,876/9,860-VBlank runs:
+`off` = `GT4_CORE2_WAIT_NEWEST_FENCE=0` (the pre-step-3 slot-by-slot wait, K 0), `k8` = the K rule on and the old wait,
+`o2` = the newest-fence wait only (the default), `both` = both.
+
+| Scene | Reference (study 3) | off | k8 | o2 | both |
+|---|---|---|---|---|---|
+| Hong Kong 2x, 6,835 replies | `2f4c1cc9f174d00e` | same | same | same | same |
+| Hong Kong 10x, 6,835 replies | `61109e8f3143264a` | same | same | same | same |
+| Motegi 2x, 6,588 replies | `7bf932fbb8799965` | same | same | same | same |
+
+All **16** cumulative `[hw] flare replies` lines of every run are identical to the reference, not only the final hash
+(`build/evidence182/id3-hashes-final.txt`). The same run set was repeated on every build along the way - the first O2
+(which moved the older slots' bookkeeping after the newest fence), the same with the final log lines, and the final
+deferred-bookkeeping O2 - and every repetition reproduced every hash, which is the expected result for switches that only
+move when the CPU waits.
+
+`gates6.sh` (the TASK-178 copy of the TASK-134 gate, read only, candidate = this build: `wrong=0`):
+
+| Gate | Result |
+|---|---|
+| Spec II George V / El Capitan / Tokyo R246, 1x | race clock identical, simulation state identical (212,992 B), `IDENTITY-OK` x3 |
+| v2.00 night race 3x | state identical (131,072 B), clock identical (the reference folder's 10 frames were missing, see the gap below) |
+| v2.00 Arcade path 3x | 14 frames identical |
+| Spec II George V lap 6x | 12 frames identical |
+| VU1/VU0 against the interpreter (Spec II 1x and v2.00 night 1x) | `verify_mismatches=0` |
+| MTVU check | 8,032 frames, 0 mismatches |
+
+Full CTest, serial (`ctest --test-dir build/t178-spec2 -j 1`): **321 tests, 100% passed, 0 failed, 1 skipped**
+(`hw_replace_q07_pcsx2_dumps`), 647.3 s. The new cases live in the existing `hw_core2_gpu_clut`:
+`GT4_CORE2_WAIT_NEWEST_FENCE` off against on over the stream fixture and the ageing fixture (images and GS memory
+bit-identical, `newestFenceWaits` 0 -> 14 and 0 -> 71, so the path really ran) and `GT4_HW_READBACK_SPIN` off against on
+(identical, `spinPolls` 0 -> 16,320); `hw_device_profile` pins the class rule (discrete 0, a tiler 8, an APU with unified
+memory 8, and a discrete card that reports unified memory still 0) and the new profile-line field. The Python suite
+against the same build (`GT4_NATIVE_BUILD=build/t178-spec2`): 802 tests, OK, 70 skipped, 52.6 s.
+
+The r14pgo reference folders of the three 1x Spec II recordings and of the v2.00 night race had **lost their `frames`**
+before this step (0 files, while the candidate runs dumped 24, 35, 35 and 10), so `gates6.sh` first reported "0 identical,
+0 differ" for them: their state and clock comparisons ran, their frame comparisons could not. The reference frames were
+regenerated from the same r14pgo executables with the same scripts and compared against this build (section 6a): **24, 35,
+35 and 10 frames, 0 differ** - the same counts TASK-178 recorded.
+
+### 6a. The four reference frame sets, regenerated and compared (C)
+
+`build/t182-step3-ref-frames.sh` runs the r14pgo executables of `gt4-wt-134-game-code-study` with the exact `replay-run.sh`
+/ `night-run.sh` environment `gates6.sh` uses, into new `-frames` folders, so no existing evidence was touched:
+
+| Reference pair | Frames | Compare with this build |
+|---|---|---|
+| George V 1x (`r14pgo-spec2`) | 24 | 24 identical, 0 differ |
+| El Capitan 1x (`r14pgo-spec2`) | 35 | 35 identical, 0 differ |
+| Tokyo R246 1x (`r14pgo-spec2`) | 35 | 35 identical, 0 differ |
+| v2.00 night race 3x (`r14pgo-v200`) | 10 | 10 identical, 0 differ |
+
+Each regenerated `state.bin` is byte-identical to the old reference state (212,992 B for the three 1x recordings, 131,072 B
+for the night race, `cmp` clean), so the reference is the same state as the one the earlier comparisons used.
+
+### 6. Indicative desktop A/B (Hong Kong and Motegi, 10x and 12x)
+
+Method: `build/t182-step3-ab.sh` (same run naming as `private/task178-tools/ab.sh`, so `ab_table.py` reads it), paired and
+interleaved **A B C C B A** per scene and scale, 7,200-frame runs, headless, unpaced, `GT4_HW_PROFILE_EVERY=600`, the
+TASK-168 press timelines. Configurations: **0** = K 0 + the old slot-by-slot wait (the pre-step-3 behaviour); **1** = K 0 +
+the newest fence (O2); **2** = K 8 + the old wait, so K is measured against config 0 and O2 against config 1, one switch at
+a time. The spin has its own pair (3 = newest fence, 4 = newest fence + `GT4_HW_READBACK_SPIN=1`) at 10x. Two runs per
+configuration and cell; each run's value is the mean of its 600-VBlank lines inside the TASK-178 window (4,476-9,876 for
+Hong Kong, 4,460-9,860 for Motegi), so five lines per run.
+
+**How noisy it is (C).** The desktop is shared and this is the whole honesty of the table:
+- No other game process ran during any run of the final waves (`foreign_samples=0`, `waited_s=0` in every `done.txt`),
+  except the runs named below, where another agent's game was seen for 9-22 samples of the run.
+- Runs of the *same* configuration and scene differ by up to **1.4 ms/VBlank** (Hong Kong 10x, K 8: 14.25 and 15.61), and
+  `gpu_busy` differs by up to 1.1 ms for identical content: the card's clock moves between runs. That spread is larger
+  than every effect measured below.
+- Some runs were hit by load that is not a game process (a build, the Android emulator). They are named and **excluded**:
+  Hong Kong 10x r6 (127 s against 83 s, GPU idle 3.16 ms/drain), Motegi 10x r6 (same shape), Hong Kong 12x r2, Motegi 12x
+  r2, and the spin pair's Hong Kong r4 and Motegi r1/r4.
+- An earlier wave with the first O2 (which did the older slots' bookkeeping *after* the newest fence) is not in this table:
+  it measured +0.1 to +0.3 ms per drain on Motegi in all four cells, which is why the final O2 defers that bookkeeping
+  instead.
+
+**10x** (ms/VBlank unless stated; single value = median of the two runs, when both are clean):
+
+| Scene | cfg | wall | read wait | GPU idle/drain | CPU gap/drain |
+|---|---|---|---|---|---|
+| Hong Kong | 0 | 15.62 | 9.11 | 1.05 | 0.86 |
+| Hong Kong | 1 (O2) | 15.66 (15.63, 15.69) | 8.24 | 1.01 | 0.86 |
+| Hong Kong | 2 (K 8) | 14.93 (14.25, 15.61) | 8.47 | **0.70** | **0.51** |
+| Motegi | 0 | 10.90 | 4.33 | 0.79 | 0.61 |
+| Motegi | 1 (O2) | 10.89 | 4.31 | 0.78 | 0.63 |
+| Motegi | 2 (K 8) | 10.79 (10.78, 10.79) | 4.32 | **0.59** | **0.41** |
+
+**12x**:
+
+| Scene | cfg | wall | read wait | GPU idle/drain | CPU gap/drain |
+|---|---|---|---|---|---|
+| Hong Kong | 0 | 21.79 (21.35, 22.22) | 12.84 | 1.83 | 1.25 |
+| Hong Kong | 1 (O2) | 21.42 | 12.74 | 1.14 | 0.96 |
+| Hong Kong | 2 (K 8) | 21.10 | 12.70 | **0.77** | **0.56** |
+| Motegi | 0 | 15.31 (15.29, 15.32) | 6.62 | 0.94 | 0.72 |
+| Motegi | 1 (O2) | 15.28 | 6.61 | 0.91 | 0.73 |
+| Motegi | 2 (K 8) | 15.08 | 6.81 | **0.64** | **0.45** |
+
+**Spin, 10x** (config 3 against 4):
+
+| Scene | no spin | spin | read wait (no spin / spin) |
+|---|---|---|---|
+| Hong Kong | 14.62 | 15.57 (15.97, 15.17) | 9.17 / 7.92 |
+| Motegi | 11.09 | 12.07 (13.03, 11.10) | 4.23 / 4.46 |
+
+**Reading (C for the counters, H for the wall).**
+- **The mechanisms are visible in the counters in every cell.** K 8 takes the GPU idle after a drain from 0.94-1.83 to
+  0.64-0.77 ms and the CPU gap with it (0.72-1.25 to 0.45-0.56); O2 removes the slot-by-slot fence calls, which lowers the
+  CPU gap in the same direction (`newest_fence_waits/vblank` equals the drain rate in every O2 run and is 0 in every
+  baseline run).
+- **K's wall medians fall in all four cells by 0.11 (Motegi 10x) to 0.69 ms (both Hong Kong cells)**, and the two runs of
+  a cell agree to 0.01 ms at Motegi 10x and 0.08 at Motegi 12x, but Hong Kong's two K 8 runs differ by 1.36 ms. With this
+  spread the result does not reach the project's bar (0.3 ms/VBlank on two scenes with no loss on the third: Hong Kong
+  clears it at both scales, Motegi does not), so **the discrete default stays 0** and the study's "K 8 on tilers and
+  unified memory" default is all the K rule gets by default.
+- **O2 is neutral in the wall** (+0.04 and -0.01 at 10x, -0.37 and -0.03 at 12x) and never worse outside the spread, with
+  the CPU gap lower wherever the runs are clean. It is exact, it removes up to 15 driver wake-ups per readback, and its
+  intended gain (a wake-up that costs more than the polling budget) is on the phone; the switch, default **on**, is how the
+  phone tests it.
+- **The spin shows no gain**: +0.95 ms on Hong Kong with the read wait lower (7.92 against 9.17), and Motegi's two spin
+  runs differ by 1.93 ms. Default stays **off** (0), as the brief required unless it measured a gain.
+
+### 7. What step 3 leaves
+
+- **The phone run decides both defaults.** One 600-VBlank Nordschleife run at 2x in normal mode with
+  `GT4_HW_PROFILE_EVERY=600` on the S23 gives `drains/vblank`, `gpu_idle_ms/drain`, `wait_ms/readback_download`,
+  `newest_fence_waits/vblank` and `spin_polls/vblank`; then the same scene with `GT4_CORE2_SUBMIT_AFTER_WAIT=0/8` and
+  `GT4_CORE2_WAIT_NEWEST_FENCE=0/1` decides whether K 8 and O2 stay. Nothing in the code needs to change for that A/B.
+- **The spin is the one to revisit there**: the desktop's fence wake-up is too cheap for a 200 us budget to matter, and a
+  phone's is the opposite (Hyp). If the phone shows a gain, `GT4_HW_READBACK_SPIN=1` is the only switch to flip.
+- **K 8 is not the phone's whole answer**: the S23's read wait is GPU backlog (11.5 ms GPU against 8.7 ms GS CPU, the UMA
+  study), so K shortens the bubble behind the read but not the backlog itself; the store-before-write merge (section 7 of
+  the barrier study, row 4 of 9.1) is the larger phone lever and is still open.
+- **`gpu_busy` is not comparable across K settings** (it sums per-submission spans and the spans overlap): read it only
+  inside one configuration, and use the wall for the comparison.

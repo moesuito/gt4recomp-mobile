@@ -60,6 +60,11 @@ struct Core2Counters {
     std::uint64_t downloadPixels = 0;
     std::uint64_t drains = 0;                // TASK-178, from the GPU's counters: waited submissions
     std::uint64_t afterWaitSubmissions = 0;  // TASK-178, from the GPU's counters: submissions by GT4_CORE2_SUBMIT_AFTER_WAIT
+    // TASK-182 step 3 (O2), from the GPU's counters: waits done on the newest fence only, and the bounded spin (polls, and the
+    // ones that saw the signalled fence without blocking).
+    std::uint64_t newestFenceWaits = 0;
+    std::uint64_t spinPolls = 0;
+    std::uint64_t spinHits = 0;
     std::uint64_t batchedReadbacks = 0;        // IN-429: target readbacks reduced together in one submission
     std::uint64_t textureBytes = 0;            // IN-431: 1x texels in the texture cache now
     std::uint64_t dirtyMerged = 0;

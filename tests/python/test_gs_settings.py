@@ -64,8 +64,8 @@ class TableSchemaTests(unittest.TestCase):
     def test_table_loads_and_has_one_row_per_setting(self):
         table = rows()
         # 71 rows, plus textures_folder (TASK-088, launcher row).
-        self.assertEqual(len(table), 72)
-        self.assertEqual(len({row['id'] for row in table}), 72)
+        self.assertEqual(len(table), 74)
+        self.assertEqual(len({row['id'] for row in table}), 74)
 
     def test_every_row_has_the_documented_columns(self):
         for row in rows():
@@ -599,7 +599,11 @@ class ResolvedValueTests(unittest.TestCase):
 class PageLayoutTests(unittest.TestCase):
     def test_graphics_page_is_basic_only(self):
         basic = [row['id'] for row in rows() if row['page'] == 'basic']
-        self.assertEqual(basic, ['gs_engine', 'graphics_api', 'performance_mode', 'fxaa', 'cas_mode', 'cas_sharpness', 'texture_load'])
+        # TASK-180 test5: Performance Mode left the page (hidden, driven by the flare toggle); the two effect toggles replace it.
+        # TASK-180 test5: Performance Mode left the page (hidden, driven by the flare toggle); the two
+        # effect toggles replace it, after the Graphics API row in the table.
+        self.assertEqual(basic, ['gs_engine', 'graphics_api', 'effect_flares', 'effect_road_sheen',
+                                  'fxaa', 'cas_mode', 'cas_sharpness', 'texture_load'])
         upscale = by_id()['upscale']
         self.assertEqual((upscale['control'], upscale['type'], upscale['default']), ('dropdown', 'enum', '1080p'))
         # TASK-080 addendum (owner, 2026-10-21): hidden, always written, set by the launcher from the display plan;

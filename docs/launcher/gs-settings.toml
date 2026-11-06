@@ -221,8 +221,8 @@ notes = "true for fifo and immediate, false for mailbox (TASK-036). Loader pcsx2
 id = "performance_mode"
 label = "Performance Mode"
 help = "Faster on weaker PCs. The game stops waiting for the graphics card to send images back: the car icons next to the gap time can come out blank and the loading screen picture may be missing. The night lights and the sun glare are turned off. Applies the next time you play."
-page = "basic"
-order = 6
+page = "hidden"
+order = 58
 control = "toggle"
 section = "EmuCore/GS"
 key = "HWDownloadMode"
@@ -234,7 +234,41 @@ choices = [
   { name = "accurate", ini = "0", status = "ok", label = "Off" },
   { name = "no-readbacks", ini = "2", status = "ok", label = "On" },
 ]
-notes = "TASK-091 (release 1.2.1, owner 2026-10-22): replaces the Readbacks row (hw_download_mode, which had five values). A toggle over an enum: the first choice is Off, the second On. Off = Accurate = GSHardwareDownloadMode Enabled (0), the default; On = NoReadbacks (2) (pcsx2/Config.h:399-405). GSdx only: with CoreGS 1.1 the row is disabled in the launcher (model.rs GSDX_ONLY_ROWS). Migration: settings schema 5 to 6 (migrate.rs settings_5_to_6): a stored hw_download_mode other than accurate becomes On, the old key is dropped."
+notes = "TASK-091 (release 1.2.1, owner 2026-10-22): replaces the Readbacks row (hw_download_mode, which had five values). A toggle over an enum: the first choice is Off, the second On. Off = Accurate = GSHardwareDownloadMode Enabled (0), the default; On = NoReadbacks (2) (pcsx2/Config.h:399-405). TASK-180 test5 (owner, 2026-11-05): Performance Mode is no longer a player row; the effect toggles below replace it. This row stays as the launcher's way into HWDownloadMode and is driven from effect_flares (the fast mode only when the flares are off, the one readback-based effect). Migration: settings schema 10 (migrate.rs settings_9_to_10) turns a stored no-readbacks into every effect toggle off and drops the key."
+
+[[setting]]
+id = "effect_flares"
+label = "Sun glare and light flares"
+help = "The sun's glare and the night lights' flares. Turning them off is the biggest speed gain of the old Performance Mode: the game no longer reads the flare visibility table back from the graphics card every frame, so the processor never waits for it."
+page = "basic"
+order = 8
+control = "toggle"
+section = ""
+key = ""
+type = "bool"
+default = "true"
+written = "never"
+offered = true
+status = "ok"
+env = "GT4_CORE2_PERF_FLARES"
+notes = "TASK-180 test5 (owner, 2026-11-05): 'flare do sol, flare de luz' as one toggle. The VU1 scales the sun glare and every light flare by the entries of ONE 64 x 8 visibility table (IN-441), so the two cannot be split exactly; one toggle hides both. On = drawn as the original game (the accurate readback); off = the table is answered as zeros at once (GT4_CORE2_PERF_FLARES=1, the GSdx path's GT4_GS_HIDE_FLARES=1) and no flare is drawn. Readback-based item: the GSdx path uses the fast download mode only when this is off."
+
+[[setting]]
+id = "effect_road_sheen"
+label = "Road sheen"
+help = "The shine over the road that GT4 draws as a full-screen pass. Turning it off removes a whole-screen pass every frame in a race; the road looks duller and a little darker."
+page = "basic"
+order = 9
+control = "toggle"
+section = ""
+key = ""
+type = "bool"
+default = "true"
+written = "never"
+offered = true
+status = "ok"
+env = "GT4_CORE2_PERF_ROAD_SHEEN"
+notes = "TASK-180 test5 (owner, 2026-11-05): 'brilho no asfalto'. CoreGS 2.0 only: the sheen is identified in the core 2 batch classifier (IN-501: blend state and coverage over the frame) and its alpha-lane fills go with it (IN-502). The GSdx path streams raw GIF to the external GS and has no classifier on the game side, so its row is not offered there (GT4_CORE2_PERF_ROAD_SHEEN=1 / GT4_CORE2_ROAD_SHEEN=0 for CoreGS 2.0)."
 
 [[setting]]
 id = "fxaa"

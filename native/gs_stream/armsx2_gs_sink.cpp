@@ -162,7 +162,10 @@ bool start(std::string &error) {
   info.native_window = nullptr;  // attached by the window host before the first frame begins
   info.surface_width = 0;
   info.surface_height = 0;
-  info.serial = "SCUS-97328";
+  // The game's own serial (SCUS-97328 for v2.00, SCUS-97436 for Spec II): the texture folder and the GameDB fixes follow
+  // it. GT4_GAME_SERIAL comes from the launcher's plan; the fallback keeps an older launcher working for v2.00.
+  const char *game_serial = std::getenv("GT4_GAME_SERIAL");
+  info.serial = (game_serial != nullptr && *game_serial != '\0') ? game_serial : "SCUS-97328";
   info.preferred_backend = backend;
   info.log_performance = std::getenv("GT4_ARMSX2_GS_PERF") != nullptr ? 1 : 0;
   // The launcher's Performance HUD setting: off, frame rate only or the full panel (drawn by the library, never the

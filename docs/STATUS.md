@@ -1,3 +1,54 @@
+## Private GPL test build, round 4: no JIT, the CoreGS HUD, Vulkan and FSR1, Spec II from test5 (private/armsx2-gs-s23, 2026-11-06)
+
+**PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** This round adds, on top of rc15:
+
+- **No JIT in the GS library.** A `GT4GS_NO_JIT` build removes the GS software rasterizer's xbyak/vixl code generators,
+  maps no executable code memory (`HasCodeMemory()` false, `SysMemory` logs it) and leaves the emulator's recompilers
+  uninitialized. `game.log` says `no JIT: GT4GS_NO_JIT build; executable code memory absent`; no GS generator code and
+  no xbyak symbols are in `libgt4gs.so`. The ARM64 guest recompilers (vixl) are still linked but unreachable (the GS-only
+  VM never runs guest code); removing them from the link is a separate surgery.
+- **The Performance HUD is CoreGS 2.0's**: same panel, position, size rule, colours, line order, labels, units, number
+  formats, 500 ms text pace, 5-line frame-time graph and FPS-only mode. The GPU row is the driver's busy share (or n/a);
+  the old device-time ms line is gone.
+- **VSync and Frame rate (experimental) show under GSdx (ARMSX2)**. VSync writes `VsyncEnable` into `armsx2-gs.ini`;
+  frame rate passes `GT4_FRAME_SKIP` / `GT4_FRAME_SKIP_FORCE` to the game. Both proven in the emulator.
+- **Vulkan back end built** from shaderc `v2026.2-dev` (the vendored Android tree) with glslang `09c541ee`, SPIRV-Headers
+  `465055f6` and SPIRV-Tools `e4bceac` downloaded into the ignored vendor area. It renders on the emulator's Vulkan 1.3
+  (Lavapipe). OpenGL ES stays the default; Vulkan is experimental. **FSR1 and Snapdragon Super Resolution** are a new
+  "Upscaler" row visible only under Vulkan (ini `Upscaler = 2`, `@@ANDROID_FSR1@@` in `game.log`); OpenGL ES hides it and
+  writes `Upscaler = 0`.
+- **test5 merged** (`origin/task/180-android-emulator` at `7f2e6c43`): the effect toggles (the flares row shows under
+  ARMSX2, the road sheen stays CoreGS-only) and Spec II on Android. The PT-BR Spec II image installs through the picker,
+  identifies (`SCUS-97436 v1.10`), uses `data/games/spec2` and its own library; the GS gets `GT4_GAME_SERIAL` and logs
+  `serial 'SCUS-97436'`. It runs with the Vulkan renderer (2700+ VSyncs) but the emulator's picture stays black for it.
+- **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionCode **103001502**, 227,015,104 bytes, sha256
+  `b86066309d52f093864f49af9c01052b6f33e8a1dfb6c65f5c6fe32ab1207c32`, owner's release key, with `libgt4`,
+  `libgt4spec2` and `libgt4gs` in `symbols/`. The second library adds ~83 MB to the APK.
+
+## Android test5: effect toggles replace Performance Mode; Spec II ships (TASK-180, 2026-11-06)
+
+The CoreGS 2.0 optimisation work is paused by the owner (2026-11-06); this build keeps the exact TASK-182 savings and
+delivers the Performance Mode split and Spec II on Android.
+
+- **TASK-182 step 3** (`task/182-barrier-scope` at 54d2a0f4): the newest-fence readback wait (on), the bounded spin (off)
+  and the K rule's device default (8 on a tile-based or unified-memory GPU, 0 on a discrete one), named on the
+  `[core2] submissions` line. Android adds `GT4_CORE2_SUBMIT_EVERY=128` (S23 bench: +11.6% VBlanks/s, 32% fewer render
+  passes), which the K default is clamped to.
+- **Performance Mode is gone as a mode.** Its items are independent toggles on the Graphics page, every one on by default
+  (the effect drawn as the original game), for CoreGS 2.0 and the GSdx path:
+  - *Sun glare and light flares* (one toggle: one visibility table feeds both, IN-441): the table is answered as zeros, so
+    neither is drawn and the processor never waits for it.
+  - *Road sheen* (CoreGS 2.0 only: the classifier is core 2's): the full-screen pass and its alpha-lane fills are left out.
+  - Switches `GT4_CORE2_PERF_FLARES=1` / `GT4_CORE2_PERF_ROAD_SHEEN=1` turn one off; `GT4_CORE2_PERFORMANCE=1` still means
+    all off; the older names stay as A/B. The GSdx path gets `GT4_GS_HIDE_FLARES` and the game-side client also accepts the
+    new name; gt4-gs's fast download mode is used only when the flares are off.
+  - Settings in `[gs]` (`effect_flares`, `effect_road_sheen`, default true); schema 10 turns a stored `no-readbacks` into
+    every effect off and drops the key. Rows and help text in en-US and pt-BR.
+- **Spec II on Android:** the hooked Spec II unit set (regenerated with `scripts/camera360_units.py spec2`), a
+  `libgt4spec2.so` for arm64, both libraries in the APK, and the game Activity loading the chosen game's library. The
+  launcher's Play uses the game's own ELF and bench mode accepts `GT4_BENCH_GAME=spec2`. The emulator boot test is
+  pending: the only Spec II images on this PC are PTBR builds whose hash is not the pinned one.
+- **Cancelled:** unified-memory phase 2 (the owner paused CoreGS 2.0 optimisation).
 ## Private GPL test build: rc15, GSdx (ARMSX2) as the default renderer (private/armsx2-gs-s23, 2026-11-06)
 
 **PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** The clone `gt4-private-armsx2gs` (push disabled)

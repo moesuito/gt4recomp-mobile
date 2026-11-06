@@ -118,7 +118,7 @@ pub const SETTINGS: Chain = Chain {
     file: "settings.toml",
     key: "schema_version",
     first: 0,
-    current: 9,
+    current: 10,
     steps: &[
         Step { from: 0, apply: settings_0_to_1 },
         Step { from: 1, apply: settings_1_to_2 },
@@ -129,6 +129,7 @@ pub const SETTINGS: Chain = Chain {
         Step { from: 6, apply: settings_6_to_7 },
         Step { from: 7, apply: settings_7_to_8 },
         Step { from: 8, apply: settings_8_to_9 },
+        Step { from: 9, apply: settings_9_to_10 },
     ],
 };
 
@@ -141,6 +142,23 @@ fn settings_8_to_9(document: &mut Value) -> Result<(), String> {
     let install = table.entry("install".to_string()).or_insert_with(|| Value::Object(serde_json::Map::new()));
     if let Some(section) = install.as_object_mut() {
         section.entry("render_scale_model".to_string()).or_insert_with(|| Value::from(1));
+    }
+    Ok(())
+}
+
+/// Schema 10 (TASK-180 test5, owner 2026-11-05): Performance Mode is replaced by independent effect toggles, each on by
+/// default (the effect is drawn as the original game). A stored `[gs] performance_mode = "no-readbacks"` is the player's
+/// old choice to turn the bundle on: it turns every effect toggle off, which is what it did, and the key goes. A file
+/// without it means every effect on, which is the toggles' default, so nothing is written for it. The rest is untouched.
+fn settings_9_to_10(document: &mut Value) -> Result<(), String> {
+    let table = document.as_object_mut().ok_or("settings.toml: the document is not a table")?;
+    if let Some(gs) = table.get_mut("gs").and_then(Value::as_object_mut) {
+        let performance = gs.get("performance_mode").and_then(Value::as_str) == Some("no-readbacks");
+        if performance {
+            gs.insert("effect_flares".to_string(), Value::from("false"));
+            gs.insert("effect_road_sheen".to_string(), Value::from("false"));
+        }
+        gs.remove("performance_mode");
     }
     Ok(())
 }
@@ -417,7 +435,7 @@ mod tests {
     fn schema_eight_marks_the_old_render_scale_model() {
         let mut document = json!({"schema_version": 8, "settings": {"render_scale": "125"}, "install": {"disc_path": "D:/gt4.iso"}});
         assert_eq!(migrate(&SETTINGS, &mut document).unwrap(), 8);
-        assert_eq!(document["schema_version"], json!(9));
+        assert_eq!(document["schema_version"], json!(10));
         assert_eq!(document["install"]["render_scale_model"], json!(1));
         assert_eq!(document["install"]["disc_path"], json!("D:/gt4.iso"), "the rest of [install] is kept");
         assert_eq!(document["settings"]["render_scale"], json!("125"), "the value is converted at load, with the screen");
@@ -432,7 +450,7 @@ mod tests {
     fn settings_schema_zero_reaches_the_current_schema_and_keeps_its_values() {
         let mut document = json!({"settings": {"vsync": "fast"}});
         assert_eq!(migrate(&SETTINGS, &mut document).unwrap(), 0);
-        assert_eq!(document["schema_version"], json!(9));
+        assert_eq!(document["schema_version"], json!(10));
         assert_eq!(document["settings"]["vsync"], json!("fast"));
         assert!(document["settings"].get("widescreen").is_none(), "added by step 3, dropped by step 4");
         assert!(document["settings"].get("aspect_ratio").is_none(), "added by step 4, dropped by step 5");
@@ -454,7 +472,7 @@ mod tests {
             "install": {"disc_path": "D:/gt4.iso"}
         });
         assert_eq!(migrate(&SETTINGS, &mut released).unwrap(), 3);
-        assert_eq!(released["schema_version"], json!(9));
+        assert_eq!(released["schema_version"], json!(10));
         assert!(released["settings"].get("aspect_ratio").is_none());
         assert_eq!(released["settings"]["monitor"], json!("primary"));
         assert_eq!(released["settings"]["resolution"], json!("desktop"));
@@ -484,7 +502,7 @@ mod tests {
             "install": {"disc_path": "D:/gt4.iso"}
         });
         assert_eq!(migrate(&SETTINGS, &mut file).unwrap(), 4);
-        assert_eq!(file["schema_version"], json!(9));
+        assert_eq!(file["schema_version"], json!(10));
         for gone in ["aspect_ratio", "aspect_custom"] {
             assert!(file["settings"].get(gone).is_none(), "{gone} dropped from [settings]");
             assert!(file["choices"].get(gone).is_none(), "{gone} dropped from [choices]");
@@ -518,7 +536,7 @@ mod tests {
 
         let mut chained = json!({"schema_version": 2, "settings": {"vsync": "on"}});
         assert_eq!(migrate(&SETTINGS, &mut chained).unwrap(), 2);
-        assert_eq!(chained["schema_version"], json!(9));
+        assert_eq!(chained["schema_version"], json!(10));
     }
 
     #[test]
@@ -536,7 +554,7 @@ mod tests {
     fn a_stored_coregs11_renderer_becomes_gsdx_in_schema_7() {
         let mut document = json!({"schema_version": 6, "settings": {"renderer": "coregs11", "vsync": "fast"}, "choices": {"renderer": true}});
         assert_eq!(migrate(&SETTINGS, &mut document).unwrap(), 6);
-        assert_eq!(document["schema_version"], json!(9));
+        assert_eq!(document["schema_version"], json!(10));
         assert_eq!(document["settings"]["renderer"], json!("pcsx2"), "CoreGS 1.1 is gone: GSdx");
         assert_eq!(document["settings"]["vsync"], json!("fast"), "other values survive");
         assert_eq!(document["choices"]["renderer"], json!(true), "the choice flag is kept");
@@ -551,25 +569,47 @@ mod tests {
     }
 
     #[test]
-    fn a_non_accurate_readback_mode_becomes_performance_mode_on_and_the_old_key_goes() {
+    fn a_non_accurate_readback_mode_becomes_the_effect_toggles_off_and_the_old_keys_go() {
         for old in ["unsynchronized", "no-readbacks", "enabled-force-full", "disabled"] {
             let mut document = json!({"schema_version": 5, "gs": {"hw_download_mode": old, "fxaa": "true"}});
             assert_eq!(migrate(&SETTINGS, &mut document).unwrap(), 5, "{old}: returns the schema it started from");
-            assert_eq!(document["gs"]["performance_mode"], json!("no-readbacks"), "{old}");
+            // TASK-180 test5 (schema 10): the old Performance Mode was every effect off, which is what its toggles say.
+            assert_eq!(document["gs"]["effect_flares"], json!("false"), "{old}");
+            assert_eq!(document["gs"]["effect_road_sheen"], json!("false"), "{old}");
+            assert!(document["gs"].get("performance_mode").is_none(), "{old}: the key is gone");
             assert!(document["gs"].get("hw_download_mode").is_none(), "{old}");
             assert_eq!(document["gs"]["fxaa"], json!("true"), "other values are kept");
         }
     }
 
     #[test]
-    fn an_accurate_or_missing_readback_mode_leaves_performance_mode_off() {
+    fn an_accurate_or_missing_readback_mode_leaves_every_effect_on() {
         let mut accurate = json!({"schema_version": 5, "gs": {"hw_download_mode": "accurate"}});
         migrate(&SETTINGS, &mut accurate).unwrap();
         assert!(accurate["gs"].get("hw_download_mode").is_none(), "the old key is dropped");
-        assert!(accurate["gs"].get("performance_mode").is_none(), "absent is Off, the default");
+        assert!(accurate["gs"].get("performance_mode").is_none(), "the old key stays gone");
+        assert!(accurate["gs"].get("effect_flares").is_none(), "absent means on, the table default");
 
         let mut missing = json!({"schema_version": 5, "gs": {"fxaa": "false"}});
         migrate(&SETTINGS, &mut missing).unwrap();
         assert!(missing["gs"].get("performance_mode").is_none());
+        assert!(missing["gs"].get("effect_flares").is_none());
+    }
+
+    /// TASK-180 test5: a schema 9 file that carries the old Performance Mode turns every effect off and loses the key.
+    #[test]
+    fn schema_nine_performance_mode_becomes_every_effect_off() {
+        let mut on = json!({"schema_version": 9, "gs": {"performance_mode": "no-readbacks", "fxaa": "true"}});
+        migrate(&SETTINGS, &mut on).unwrap();
+        assert_eq!(on["schema_version"], json!(10));
+        assert_eq!(on["gs"]["effect_flares"], json!("false"));
+        assert_eq!(on["gs"]["effect_road_sheen"], json!("false"));
+        assert!(on["gs"].get("performance_mode").is_none());
+        assert_eq!(on["gs"]["fxaa"], json!("true"));
+
+        let mut off = json!({"schema_version": 9, "gs": {"performance_mode": "accurate"}});
+        migrate(&SETTINGS, &mut off).unwrap();
+        assert!(off["gs"].get("performance_mode").is_none());
+        assert!(off["gs"].get("effect_flares").is_none(), "every effect on, the default");
     }
 }

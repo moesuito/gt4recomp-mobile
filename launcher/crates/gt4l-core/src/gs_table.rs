@@ -79,6 +79,10 @@ pub struct Row {
     pub forced: bool,
     #[serde(default)]
     pub env: String,
+    /// A launcher-only row the Settings page still shows (TASK-180 test5: the effect toggles, which reach the game as an
+    /// environment variable and are never written to the INI). `written = "never"` rows are otherwise hidden from the UI.
+    #[serde(default)]
+    pub offered: bool,
 }
 
 #[derive(Deserialize)]
@@ -145,6 +149,9 @@ fn check_row(row: &Row) -> Result<(), TableError> {
     if row.written == "never" && (!row.section.is_empty() || !row.key.is_empty()) {
         return refuse(format!("{name}: launcher-only row must have no INI section or key"));
     }
+    if row.offered && (row.written != "never" || row.env.is_empty()) {
+        return refuse(format!("{name}: an offered launcher-only row must be written = \"never\" with an env variable"));
+    }
     if row.written != "never" && row.status == "ok" && (row.section.is_empty() || row.key.is_empty()) {
         return refuse(format!("{name}: settable row needs an INI section and key"));
     }
@@ -205,7 +212,8 @@ pub fn default_value(id: &str) -> Option<String> {
 /// Checks a user value (from settings.toml or the UI) against the compiled-in table and returns its normalized text.
 pub fn check_user_value(id: &str, raw: &str) -> Result<String, String> {
     let row = row(id).ok_or_else(|| format!("unknown GS setting '{id}'"))?;
-    if matches!(row.written.as_str(), "never" | "launcher") || row.kind == "path" {
+    // TASK-180 test5: an offered launcher-only row (the effect toggles) takes a user value; it simply never reaches the INI.
+    if (matches!(row.written.as_str(), "never" | "launcher") && !row.offered) || row.kind == "path" {
         return Err(format!("{id} is set by the launcher, not by a user setting"));
     }
     if row.page == MODS_PAGE {
@@ -223,7 +231,7 @@ pub fn offered() -> Vec<&'static Row> {
             row.page != MODS_PAGE
                 && row.page != "hidden"
                 && row.status == "ok"
-                && !matches!(row.written.as_str(), "never" | "launcher")
+                && (!matches!(row.written.as_str(), "never" | "launcher") || (row.offered && !row.env.is_empty()))
                 && (row.kind != "enum" || row.choices.iter().any(|choice| choice.status == "ok"))
         })
         .collect()

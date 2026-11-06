@@ -305,6 +305,23 @@ struct Gpu::Impl {
     return text ? static_cast<std::uint32_t>(std::strtoul(text, nullptr, 10)) : kSubmitEveryAtInit;
   }();
   bool afterWait = false;  // the last submission was waited for, and none has followed it yet (the K rule applies)
+  // TASK-182 step 3 (row 5 of STUDY-ASYNC-READBACK 9.1, O2): wait only for the newest submission's fence when the GS worker
+  // has to wait for a readback, instead of the fence of every slot (see wait_newest for the in-order-queue argument).
+  // GT4_CORE2_WAIT_NEWEST_FENCE=0 waits for every slot as before (A/B); unset: on, exact on any Vulkan queue.
+  const bool waitNewestFence = [] {
+    const char *text = std::getenv("GT4_CORE2_WAIT_NEWEST_FENCE");
+    return text == nullptr || std::strcmp(text, "0") != 0;
+  }();
+  // TASK-182 step 3: a bounded spin on the read's fence before blocking on it (the study's O2; §10's "cost of one
+  // vkWaitForFences wake-up against a spin"). GT4_HW_READBACK_SPIN=1 spins for kReadbackSpinUs, a larger number for that
+  // many microseconds; 0 or unset blocks at once (A/B, default off).
+  static constexpr std::uint32_t kReadbackSpinUs = 200;
+  const std::uint32_t readbackSpinUs = [] {
+    const char *text = std::getenv("GT4_HW_READBACK_SPIN");
+    if (text == nullptr || text[0] == '\0' || std::strcmp(text, "0") == 0) return 0u;
+    const long value = std::strtol(text, nullptr, 10);
+    return value > 1 ? static_cast<std::uint32_t>(std::min<long>(value, 100000)) : kReadbackSpinUs;
+  }();
   // TASK-178 diagnostics: a drain whose next submission has not been sent yet, the CPU time its wait ended and the GPU end of
   // the drained work (timestamp ticks, 0: none).
   bool drainOpen = false;
@@ -2553,11 +2570,35 @@ struct Gpu::Impl {
     if (!lazyBarriers) full_barrier();
   }
 
-  bool wait_slot(std::uint32_t index, std::string &error) {
+  bool wait_slot(std::uint32_t index, std::string &error, bool spin = false) {
     Slot &s = slots[index];
     if (!s.inFlight) return true;
     const auto waitStart = std::chrono::steady_clock::now();
-    if (!check(gt4_hw_vkWaitForFences(device, 1, &s.fence, VK_TRUE, UINT64_MAX), "vkWaitForFences", error)) return false;
+    bool signalled = false;
+    if (spin && readbackSpinUs != 0) {
+      // TASK-182 step 3 (GT4_HW_READBACK_SPIN): poll the fence for a bounded time before blocking on it. Same wait, one
+      // fewer trip through the driver: a fence that is about to signal is seen here, and one that is not costs at most
+      // readbackSpinUs of CPU before the blocking call. The poll is exact by construction: a signalled fence means the
+      // submission completed, which is what the blocking wait would have returned.
+      const auto spinStart = waitStart;
+      while (true) {
+        const VkResult polled = gt4_hw_vkWaitForFences(device, 1, &s.fence, VK_TRUE, 0);
+        stats.spinPolls++;
+        if (polled == VK_SUCCESS) {
+          stats.spinHits++;
+          signalled = true;
+          break;
+        }
+        if (polled != VK_TIMEOUT) return check(polled, "vkWaitForFences", error);
+        const double elapsedUs =
+            std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - spinStart).count();
+        if (elapsedUs >= static_cast<double>(readbackSpinUs)) break;
+      }
+    }
+    if (!signalled &&
+        !check(gt4_hw_vkWaitForFences(device, 1, &s.fence, VK_TRUE, UINT64_MAX), "vkWaitForFences", error)) {
+      return false;
+    }
     stats.waitNs += static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - waitStart).count());
     stats.waits++;
@@ -2618,11 +2659,50 @@ struct Gpu::Impl {
   }
 
   // Waits for everything submitted (a fence signals after every earlier submission on the queue too).
-  bool wait_all(std::string &error) {
+  //
+  // TASK-182 step 3 (O2): with GT4_CORE2_WAIT_NEWEST_FENCE (on unless 0) only the newest submission's fence is waited for;
+  // see wait_newest for why that is the same wait and what happens to the older slots. Without it, every slot is waited for
+  // in slot order, which is what TASK-178 shipped. GT4_HW_READBACK_SPIN spins on the first fence either way.
+  bool wait_all(std::string &error) { return waitNewestFence ? wait_newest(error) : wait_every_slot(error); }
+
+  // The slot-by-slot wait: blocks on each in-flight slot in slot order, and does each one's bookkeeping as it completes.
+  bool wait_every_slot(std::string &error) {
+    const bool spin = readbackSpinUs != 0;
+    bool firstWait = true;
     for (std::uint32_t i = 0; i < slotCount; ++i) {
-      if (!wait_slot(i, error)) return false;
+      if (!slots[i].inFlight) continue;
+      if (!wait_slot(i, error, spin && firstWait)) return false;
+      firstWait = false;
     }
     return true;
+  }
+
+  // TASK-182 step 3 (row 5 of STUDY-ASYNC-READBACK 9.1, O2): wait for the fence of the submission that carries the read,
+  // not for all of them.
+  //
+  // Why this is exact. Every submission of this class goes to the one queue `queue`, in vkQueueSubmit order, and Vulkan
+  // signals a submission's fence only after that submission and every submission before it on the same queue have
+  // completed (Vulkan 1.3 spec, fences: "if a fence is signaled, then all commands submitted before it ... have
+  // completed"). The readback's own recording is submitted by submit(true), so its submission is the newest one when this
+  // runs; waiting for that fence therefore implies the completion of every earlier slot, which is exactly what waiting all
+  // of them returned. The guest bytes, the GS-memory write and the reduced words all become visible at the same moment as
+  // before, so nothing observable moves; only the number of blocking driver calls falls (one wake-up instead of up to
+  // slotCount).
+  //
+  // The older slots keep their bookkeeping (their timestamps are read and their doomed images released inside wait_slot)
+  // until their slot is reused by begin_recording, which waits for it there, or until the final drain. That is the same
+  // time that work took before - overlapped with the GPU finishing the newer submissions - only now it is off the read's
+  // critical path instead of on it. Nothing else in the slot changes: the read's own slot is waited for here, and a
+  // submission whose slot is still marked in flight is not reused before begin_recording waits for it.
+  bool wait_newest(std::string &error) {
+    std::uint32_t newest = kMaxSlots;  // none in flight
+    for (std::uint32_t i = 0; i < slotCount; ++i) {
+      if (!slots[i].inFlight) continue;
+      if (newest == kMaxSlots || slots[i].serial > slots[newest].serial) newest = i;
+    }
+    if (newest == kMaxSlots) return true;
+    stats.newestFenceWaits++;
+    return wait_slot(newest, error, readbackSpinUs != 0);
   }
 
   bool begin_recording(std::string &error) {
@@ -2807,7 +2887,8 @@ Gpu::~Gpu() {
   s.save_shader_cache();  // IN-489
   if (s.pipelineCache) gt4_hwd_vkDestroyPipelineCache(s.device, s.pipelineCache, nullptr);
   std::string ignored;
-  s.submit(true, ignored);
+  s.submit(false, ignored);      // finish the recording, if any
+  s.wait_every_slot(ignored);    // every slot: the images and query pools below are about to be destroyed
   for (VkPipeline pipeline : s.specAll) gt4_hwd_vkDestroyPipeline(s.device, pipeline, nullptr);
   for (Image &image : s.images) s.release(image);
   for (Image &image : s.doomed) s.release(image);
@@ -2840,6 +2921,7 @@ Gpu::~Gpu() {
 bool Gpu::Ready() const { return impl_->ready; }
 
 bool Gpu::Integrated() const { return impl_->integrated; }
+bool Gpu::RoadSheenSkipped() const { return impl_->skipRoadSheen; }
 
 bool Gpu::PrepareShaders(const ShaderProgress &progress, std::string &error) {
   Impl &s = *impl_;
@@ -3027,14 +3109,31 @@ bool Gpu::Init(const gpu::VulkanHandles &handles, std::uint32_t scale, float shi
   // the device's creator did not probe it.
   s.integrated = handles.profile.probed ? handles.profile.integrated_defaults
                                         : gt4::hw::integrated_defaults(static_cast<std::uint32_t>(properties.deviceType));
+  // TASK-182 step 3: the K rule's device default uses the whole profile (class, unified memory). The creator of the device may
+  // not have probed it (a fixture, a test path): classify the physical device here then, so the decision is never a default
+  // that happens to be "discrete".
+  gt4::hw::DeviceProfile deviceProfile = handles.profile;
+  if (!deviceProfile.probed) {
+    deviceProfile.vendor_id = properties.vendorID;
+    deviceProfile.device_type = static_cast<std::uint32_t>(properties.deviceType);
+    deviceProfile.device_class = gt4::hw::classify_device(deviceProfile.vendor_id, deviceProfile.device_type);
+    deviceProfile.integrated_defaults = gt4::hw::integrated_defaults(deviceProfile.device_type);
+  }
   s.deviceProperties = properties;  // IN-507
   {
     if (s.clearWholeSetting < 0) s.clearTopZero = s.integrated || scale > 1;  // IN-494
     const char *plainSwitch = std::getenv("GT4_CORE2_PLAIN_DISJOINT");  // IN-496
     s.plainDisjoint = plainSwitch ? std::strcmp(plainSwitch, "0") != 0 : s.integrated;
-    const char *sheenSwitch = std::getenv("GT4_CORE2_ROAD_SHEEN");  // IN-501
+    // IN-501: GT4's sheen on the road, a full-screen pass that adds a small target's picture weighted by destination
+    // alpha; Performance Mode left it out and the road got darker. TASK-180 test5: its own effect toggle now,
+    // GT4_CORE2_PERF_ROAD_SHEEN=1 turns it off (the older GT4_CORE2_ROAD_SHEEN=0 says the same and wins; the
+    // GT4_CORE2_PERFORMANCE bundle still turns every item off).
+    const char *sheenSwitch = std::getenv("GT4_CORE2_ROAD_SHEEN");
+    const char *sheenEffect = std::getenv("GT4_CORE2_PERF_ROAD_SHEEN");
     const char *performanceSwitch = std::getenv("GT4_CORE2_PERFORMANCE");
-    s.skipRoadSheen = sheenSwitch ? std::strcmp(sheenSwitch, "0") == 0 : performanceSwitch && std::strcmp(performanceSwitch, "0") != 0;
+    s.skipRoadSheen = sheenSwitch  ? std::strcmp(sheenSwitch, "0") == 0
+                      : sheenEffect ? std::strcmp(sheenEffect, "0") != 0
+                      : performanceSwitch && std::strcmp(performanceSwitch, "0") != 0;
   }
 
   VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -3054,8 +3153,17 @@ bool Gpu::Init(const gpu::VulkanHandles &handles, std::uint32_t scale, float shi
   }
   if (s.slotCount == 0) s.slotCount = s.integrated ? 8u : 16u;  // IN-517
   if (s.submitEvery == Impl::kSubmitEveryAtInit) s.submitEvery = s.integrated ? 32u : 64u;  // TASK-134
-  // TASK-178: off by default until the A/B on the Avell decides (desktop runs: docs/hw-renderer-spec/STUDY-FRAME-DOWNLOAD-COST.md).
-  if (s.submitAfterWait == Impl::kSubmitEveryAtInit) s.submitAfterWait = 0u;
+  // TASK-178: the K rule's default; TASK-182 step 3: by device class. A tiler or a unified-memory device (a phone, an APU)
+  // submits again 8 batches after a waited readback; a discrete GPU keeps 0 until its own A/B shows a gain (TASK-178 9.3:
+  // no clear wall gain on the desktop). GT4_CORE2_SUBMIT_AFTER_WAIT always overrides, and the line below says which.
+  char afterWaitReason[128] = "GT4_CORE2_SUBMIT_AFTER_WAIT";
+  if (s.submitAfterWait == Impl::kSubmitEveryAtInit) {
+    // Never later than the normal cadence: with GT4_CORE2_SUBMIT_EVERY below 8 (or 0, submissions only when needed) the device
+    // default must not delay the submission the user asked for.
+    s.submitAfterWait = std::min(gt4::hw::k_rule_default_batches(deviceProfile), s.submitEvery);
+    std::snprintf(afterWaitReason, sizeof afterWaitReason, "device default, %s",
+                  gt4::hw::k_rule_default_reason(deviceProfile));
+  }
   const VkBufferUsageFlags stagingUsage =
       VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
   // IN-476: on an integrated GPU the CPU writes these through its caches (the GPU shares them) rather than through the
@@ -3501,8 +3609,13 @@ bool Gpu::Init(const gpu::VulkanHandles &handles, std::uint32_t scale, float shi
   s.ready = true;
   std::fprintf(stderr, "[core2] ready: scale %u, shift %.3f, pixel interlock %s, max native side %u\n", s.scale,
                static_cast<double>(s.shift), s.interlock ? "yes" : "no", MaxNativeSide());
-  std::fprintf(stderr, "[core2] submissions: %u slots, every %u batches, after a wait %u batches (TASK-178 GT4_CORE2_SUBMIT_AFTER_WAIT, 0 = off)\n",
-               s.slotCount, s.submitEvery, s.submitAfterWait);
+  std::fprintf(stderr, "[core2] submissions: %u slots, every %u batches, after a wait %u batches (TASK-182 step 3: %s; "
+               "0 = off)\n",
+               s.slotCount, s.submitEvery, s.submitAfterWait, afterWaitReason);
+  std::fprintf(stderr, "[core2] readback wait: %s%s%s\n",
+               s.waitNewestFence ? "newest fence only (GT4_CORE2_WAIT_NEWEST_FENCE=1)" : "every slot (GT4_CORE2_WAIT_NEWEST_FENCE=0)",
+               s.readbackSpinUs != 0 ? ", bounded spin" : ", block at once",
+               s.readbackSpinUs != 0 ? " (GT4_HW_READBACK_SPIN=1)" : " (GT4_HW_READBACK_SPIN off)");
   return true;
 }
 

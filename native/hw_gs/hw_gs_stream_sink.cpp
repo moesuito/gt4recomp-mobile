@@ -963,9 +963,14 @@ void privileged(std::uint32_t address, std::uint64_t value) {
 // (`local_readback`, gs_stream_client.cpp). GT4_HW_FLARE_NO_WAIT=0 waits as before (A/B).
 bool flare_table_answered_at_once() {
   static const bool on = [] {
+    // TASK-180 test5: the flares are one effect toggle (GT4_CORE2_PERF_FLARES=1 hides them); the older names still work
+    // (GT4_GS_HIDE_FLARES is the A/B and the GSdx switch; GT4_CORE2_PERFORMANCE turns every item off).
     const char *hide = std::getenv("GT4_GS_HIDE_FLARES");
+    const char *effect = std::getenv("GT4_CORE2_PERF_FLARES");
     const char *performance = std::getenv("GT4_CORE2_PERFORMANCE");
-    const bool hidden = hide != nullptr ? std::strcmp(hide, "0") != 0 : performance != nullptr && std::strcmp(performance, "0") != 0;
+    const bool hidden = hide != nullptr        ? std::strcmp(hide, "0") != 0
+                        : effect != nullptr    ? std::strcmp(effect, "0") != 0
+                        : performance != nullptr && std::strcmp(performance, "0") != 0;
     const char *noWait = std::getenv("GT4_HW_FLARE_NO_WAIT");
     return hidden && (noWait == nullptr || std::strcmp(noWait, "0") != 0);
   }();

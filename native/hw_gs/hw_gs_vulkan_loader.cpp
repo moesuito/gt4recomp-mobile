@@ -245,6 +245,19 @@ gt4::hw::DeviceProfile probe_device_profile(VkInstance instance, VkPhysicalDevic
       std::fprintf(stderr, "[hw] GT4_HW_MEMORY_SHAPE=%s: memory shape forced (diagnostics)\n", forced);
     }
   }
+  // TASK-182 step 3: the unified-memory test: a memory type the GPU sees as its own and the CPU can write without a copy.
+  // An APU or a phone reports one. A discrete GPU normally does not (its VRAM is device-local, its host-visible heap is
+  // system memory), but one with resizable BAR may expose part of its VRAM that way - the RX 9060 XT here does - so the device
+  // class, not this bit alone, decides the K rule's default (gt4::hw::k_rule_default_on). Read from the memory types, next
+  // to the heaps above.
+  for (std::uint32_t i = 0; i < memory.memoryProperties.memoryTypeCount; ++i) {
+    const VkMemoryPropertyFlags flags = memory.memoryProperties.memoryTypes[i].propertyFlags;
+    if ((flags & (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) ==
+        (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+      profile.unified_memory = true;
+      break;
+    }
+  }
   return profile;
 }
 

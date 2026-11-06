@@ -208,6 +208,10 @@ pub fn pcsx2_environment(settings: &Settings, paths: &Pcsx2Paths) -> Vec<(String
     variables.insert("GT4_GS_PROCESS_SHA256", paths.executable_sha256.clone());
     variables.insert("GT4_GS_CONFIG", paths.config.display().to_string());
     variables.insert("PS2_GS", "gpu".to_string());
+    // TASK-180 test5: Performance Mode is gone; the flare toggle drives the stream client's local zero answer (TASK-117)
+    // on this path. The road sheen is identified in CoreGS 2.0's batch classifier, which the external GS path does not
+    // run on the game side, so that item stays CoreGS-only and has no row here.
+    variables.insert("GT4_GS_HIDE_FLARES", flag(!settings.gs_is_on("effect_flares")));
     add_common(&mut variables, settings);
     variables.into_iter().map(|(name, value)| (name.to_string(), value)).collect()
 }
@@ -243,6 +247,11 @@ pub fn coregs20_environment(
     } else {
         variables.insert("GT4_FRAME_SKIP", "1".to_string());
     }
+    // TASK-180 test5 (owner, 2026-11-05): Performance Mode is replaced by independent effect toggles. The renderer's
+    // switches name the effect they turn OFF (GT4_CORE2_PERF_<ITEM>=1); a toggle that is on sends 0, so the default of
+    // every effect is drawn as the original game. The road sheen is CoreGS-only (its classifier is core 2's).
+    variables.insert("GT4_CORE2_PERF_FLARES", flag(!settings.gs_is_on("effect_flares")));
+    variables.insert("GT4_CORE2_PERF_ROAD_SHEEN", flag(!settings.gs_is_on("effect_road_sheen")));
     // TASK-174: the one-queue presentation path is the game's default on a GPU with one graphics queue; only "off" is passed.
     if !settings.is_on("present_thread") {
         variables.insert("GT4_HW_PRESENT_SHARED_QUEUE", "0".to_string());
@@ -368,11 +377,14 @@ pub fn gs_config_text(
     // not settable from a value yet (status resolved). It is added below the table's render, in its section.
     let adapter = user.remove("adapter").filter(|name| !name.is_empty());
     user.insert("upscale".to_string(), session_plan(settings, display, integrated_gpu).multiplier.to_string());
-    // TASK-118 (owner, 2026-10-26): Performance Mode is a preset. Blending accuracy is not a player row any more:
-    // Minimum with Performance Mode on, High otherwise (Minimum measured about 1.5 ms less per frame on the weak laptop).
+    // TASK-180 test5 (owner, 2026-11-05): Performance Mode is no longer a preset. Blending accuracy is not an effect
+    // toggle (it changes how colours combine), so it stays at High, the accurate mode, for everyone.
+    user.insert("blending".to_string(), "high".to_string());
+    // The fast download mode is only used when every readback-based effect is off; the flares are the only one, so an
+    // effect that is on is never broken. The row is hidden from the UI and driven from here.
     user.insert(
-        "blending".to_string(),
-        if settings.gs_value("performance_mode") == "no-readbacks" { "minimum" } else { "high" }.to_string(),
+        "performance_mode".to_string(),
+        if settings.gs_is_on("effect_flares") { "accurate" } else { "no-readbacks" }.to_string(),
     );
     let present = match settings.get("vsync") {
         "fast" => "mailbox",
@@ -570,8 +582,20 @@ pub fn armsx2_effect_lines(settings: &Settings) -> Vec<String> {
         "scaled" => 1,
         _ => 2,
     };
+    // The upscaler is Vulkan-only: FSR1 = 2 and SGSR = 3 in ARMSX2's GSUpscaler enum; OpenGL ES always writes Off (0),
+    // so a value left over from a Vulkan session cannot ask the GLES device for a compute pass it does not have.
+    let upscaler = if settings.get("armsx2_api") == "vk" {
+        match settings.get("armsx2_upscaler") {
+            "fsr1" => 2,
+            "sgsr" => 3,
+            _ => 0,
+        }
+    } else {
+        0
+    };
     vec![
         format!("fxaa = {}", settings.is_on("armsx2_fxaa")),
+        format!("Upscaler = {upscaler}"),
         // The table's hidden texture_load_async row already writes LoadTextureReplacementsAsync (on), so only the
         // preloading switch of the ARMSX2 GS is added here: the owner asked for it with the pack (2026-11-06), and it
         // follows the Custom textures row.

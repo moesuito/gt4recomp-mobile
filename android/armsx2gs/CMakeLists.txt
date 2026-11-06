@@ -34,5 +34,12 @@ target_include_directories(gt4gs PRIVATE
 # FileSystem live in one object that the CDVD objects need), and a plain archive is scanned once.
 target_link_libraries(gt4gs PRIVATE PCSX2_FLAGS -Wl,--start-group PCSX2 -Wl,--end-group android log)
 
+# Vulkan (owner, 2026-11-06): the GS device compiles shaders at run time through shaderc, which the Android tree builds
+# from 3rdparty/shaderc (shaderc + glslang + SPIRV-Tools + SPIRV-Headers, pinned by its DEPS). The loader itself is
+# Android's libvulkan.so, opened at run time.
+if(USE_VULKAN)
+    target_link_libraries(gt4gs PRIVATE -Wl,--start-group shaderc -Wl,--end-group)
+endif()
+
 # 16 KB page alignment for every LOAD segment (Android 15+ devices, and the same rule the game library follows).
 target_link_options(gt4gs PRIVATE -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)

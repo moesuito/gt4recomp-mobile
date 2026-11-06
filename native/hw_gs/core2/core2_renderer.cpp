@@ -568,6 +568,9 @@ struct Renderer::Impl final : public BatchSink, public SyncSink, public Transfer
     std::optional<LocalToHostSetup> pendingRead_;
 
     // IN-439 (performance mode, decision 0073; GT4_CORE2_PERFORMANCE=1, or GT4_CORE2_DELAYED_DOWNLOADS=1 alone): an EE
+    // TASK-180 test5: this item is not a player toggle. It made the hidden flare read cheap; with the flares hidden the
+    // table is answered as zeros at once (IN-477), which supersedes it, and with the flares drawn a delayed answer would
+    // change what the game reads. It keeps its own switch for the A/B.
     // download of a rectangle inside one target with no pending dirty rectangles is answered with the words of the
     // previous download of the same rectangle, reduced on the GPU without a wait; this one's reduction is taken next
     // time. GT4 downloads one tiny row per VBlank in a race (its light flare visibility test, the same buffer for 10-25
@@ -592,9 +595,15 @@ struct Renderer::Impl final : public BatchSink, public SyncSink, public Transfer
     // IN-441 (performance mode, as rc7's TASK-117 does for the PCSX2 GS): GT4's night race reads back its light flare
     // visibility table, a 64 x 8 PSMCT32 rectangle (2048 bytes), once per frame; the VU1 scales every light flare and the
     // sun glare by its entry. Answered as zeros, without a readback, the game draws none of them: no GPU wait for the
-    // table and no flare draws. GT4_GS_HIDE_FLARES=0/1 overrides the performance mode default (the same switch as rc7's).
+    // table and no flare draws.
+    // TASK-180 test5 (owner, 2026-11-05): Performance Mode is now a set of independent effect toggles. This one hides the
+    // sun glare and the light flares; they share the one table, so they cannot be split (the VU1 scales both by it).
+    // GT4_CORE2_PERF_FLARES=1 turns them off; the older GT4_GS_HIDE_FLARES says the same and wins (it is the A/B and the
+    // switch the GSdx path has used since TASK-117); GT4_CORE2_PERFORMANCE=1 still turns every item off.
     const bool hideFlares_ = std::getenv("GT4_GS_HIDE_FLARES") != nullptr
                                  ? std::strcmp(std::getenv("GT4_GS_HIDE_FLARES"), "0") != 0
+                             : std::getenv("GT4_CORE2_PERF_FLARES") != nullptr
+                                 ? std::strcmp(std::getenv("GT4_CORE2_PERF_FLARES"), "0") != 0
                                  : performance_;
     bool zeroRead_ = false;  // the pending LOCAL->HOST read is a hidden flare table: its bytes are zeros
     const char *readbackReason_ = "other";  // diagnostics (GT4_CORE2_READBACK_TRACE): why the next readback runs
@@ -726,6 +735,7 @@ struct Renderer::Impl final : public BatchSink, public SyncSink, public Transfer
     struct DrainMark {
         std::uint64_t downloads = 0, downloadReadbacks = 0, downloadTargets = 0, downloadPixels = 0;
         std::uint64_t drains = 0, idleNs = 0, idles = 0, gapNs = 0, gaps = 0, afterWaitSubmissions = 0;
+        std::uint64_t newestFenceWaits = 0, spinPolls = 0, spinHits = 0;  // TASK-182 step 3 (O2)
     };
     DrainMark lastDrainMark_;
     std::uint64_t lastGpuNs_ = 0, lastTimedSubmissions_ = 0, lastDrawPassNs_ = 0;
@@ -5427,10 +5437,13 @@ bool Renderer::Init(const gpu::VulkanHandles &handles, std::string &error) {
         impl_->textureBudget_ = impl_->gpu_.Integrated() ? kTextureCacheBytesIntegrated : kTextureCacheBytes;
     }
     impl_->StartTextureReplacement();
-    if (impl_->delayedDownloads_ || impl_->hideFlares_) {
-        std::fprintf(stderr, "[core2] performance mode (decision 0073): delayed downloads %s, flares hidden %s\n",
-                     impl_->delayedDownloads_ ? "on" : "off", impl_->hideFlares_ ? "on" : "off");
-    }
+    // TASK-180 test5: the effect toggles this session took, one per item (Performance Mode is no bundle any more).
+    // `on` means the effect is drawn; GT4_CORE2_PERF_<ITEM>=1 turns one off.
+    std::fprintf(stderr,
+                 "[core2] effects (TASK-180 test5; GT4_CORE2_PERF_<ITEM>=1 turns one off, GT4_CORE2_PERFORMANCE=1 all): "
+                 "sun glare and light flares %s, road sheen %s, effect targets at 1x %s, delayed downloads %s\n",
+                 impl_->hideFlares_ ? "off" : "on", impl_->gpu_.RoadSheenSkipped() ? "off" : "on",
+                 impl_->effectTargets1x_ ? "on" : "off", impl_->delayedDownloads_ ? "on" : "off");
     // The prefix and the state as the last word stay as before (bench scripts read them).
     std::fprintf(stderr, "[core2] palette segments (TASK-168) [default off, GT4_CORE2_PALETTE_SEGMENTS=1 for on] %s\n",
                  impl_->paletteSegments_ ? "on" : "off");
@@ -5769,6 +5782,9 @@ void Renderer::Flush() {
             now.gapNs = g.drainGapCpuNs;
             now.gaps = g.drainGaps;
             now.afterWaitSubmissions = g.afterWaitSubmissions;
+            now.newestFenceWaits = g.newestFenceWaits;
+            now.spinPolls = g.spinPolls;
+            now.spinHits = g.spinHits;
             const Impl::DrainMark &was = s.lastDrainMark_;
             const auto per = [](std::uint64_t value, std::uint64_t count) {
                 return count != 0 ? static_cast<double>(value) / static_cast<double>(count) : 0.0;
@@ -5778,7 +5794,8 @@ void Renderer::Flush() {
                          "[core2] downloads/vblank=%.2f with_readback=%.2f targets/readback_download=%.2f "
                          "px/readback_download=%.1f wait_ms/readback_download=%.3f | drains/vblank=%.2f "
                          "gpu_idle_ms/drain=%.3f (timestamps, %.2f/vblank measured) cpu_gap_ms/drain=%.3f "
-                         "(CPU: fence wait end to next submit) after_wait_submits/vblank=%.2f (K=%u, every %u)\n",
+                         "(CPU: fence wait end to next submit) after_wait_submits/vblank=%.2f (K=%u, every %u) "
+                         "newest_fence_waits/vblank=%.2f spin_polls/vblank=%.0f (hits %.2f)\n",
                          static_cast<double>(now.downloads - was.downloads) / 600.0,
                          static_cast<double>(readbackDownloads) / 600.0,
                          per(now.downloadTargets - was.downloadTargets, readbackDownloads),
@@ -5789,7 +5806,10 @@ void Renderer::Flush() {
                          static_cast<double>(now.idles - was.idles) / 600.0,
                          per(now.gapNs - was.gapNs, now.gaps - was.gaps) / 1.0e6,
                          static_cast<double>(now.afterWaitSubmissions - was.afterWaitSubmissions) / 600.0,
-                         s.gpu_.SubmitAfterWait(), s.gpu_.SubmitEvery());
+                         s.gpu_.SubmitAfterWait(), s.gpu_.SubmitEvery(),
+                         static_cast<double>(now.newestFenceWaits - was.newestFenceWaits) / 600.0,
+                         static_cast<double>(now.spinPolls - was.spinPolls) / 600.0,
+                         static_cast<double>(now.spinHits - was.spinHits) / 600.0);
             s.lastDrainMark_ = now;
         }
         std::string byReason;
@@ -5880,6 +5900,9 @@ const Core2Counters &Renderer::Core2Stats() const {
     impl_->stats.sheensEarly = impl_->gpu_.Stats().sheensEarly;
     impl_->stats.drains = impl_->gpu_.Stats().drains;
     impl_->stats.afterWaitSubmissions = impl_->gpu_.Stats().afterWaitSubmissions;
+    impl_->stats.newestFenceWaits = impl_->gpu_.Stats().newestFenceWaits;
+    impl_->stats.spinPolls = impl_->gpu_.Stats().spinPolls;
+    impl_->stats.spinHits = impl_->gpu_.Stats().spinHits;
     impl_->stats.postFieldComposes = impl_->gpu_.Stats().fieldComposes;
     impl_->stats.postCopies = impl_->gpu_.Stats().postCopies;
     return impl_->stats;

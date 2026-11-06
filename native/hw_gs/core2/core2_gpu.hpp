@@ -169,6 +169,11 @@ struct Core2GpuStats {
     // TASK-180 test4 (P1-D): the dependencies into the host domain recorded before a host read
     // (GT4_CORE2_HOST_READ_BARRIER, on by default). Not part of fullBarriers; pending sets are untouched.
     std::uint64_t hostReadBarriers = 0;
+    // TASK-182 step 3 (O2): waits that took the newest-fence path, and the bounded spin before the blocking wait (polls and
+    // the ones that saw the fence signalled already).
+    std::uint64_t newestFenceWaits = 0;
+    std::uint64_t spinPolls = 0;
+    std::uint64_t spinHits = 0;
 };
 
 // IN-408: a CLUT load (07.4) whose source is a drawn 32-bit colour target, done on the GPU.
@@ -213,6 +218,8 @@ public:
     // IN-431: true on an integrated GPU (its images live in system memory shared with the game); the image budgets
     // are smaller there.
     bool Integrated() const;
+    // TASK-180 test5: the road sheen effect is off (GT4_CORE2_PERF_ROAD_SHEEN=1), for the [core2] effects log line.
+    bool RoadSheenSkipped() const;
     std::uint32_t Scale() const;
     std::uint32_t MaxNativeSide() const;  // the largest native side an image can have at this scale
 

@@ -130,7 +130,8 @@ fn invalid_values_and_unknown_keys_fall_back_with_warnings() {
 
 #[test]
 fn newer_schema_is_refused_and_syntax_errors_are_reported() {
-    assert!(matches!(config::parse("schema_version = 10\n"), Err(config::ConfigError::NewerSchema(10))));
+    // TASK-180 test5: the current schema is 10 (the effect toggles), so 11 is a newer file.
+    assert!(matches!(config::parse("schema_version = 11\n"), Err(config::ConfigError::NewerSchema(11))));
     assert!(matches!(config::parse("[settings\n"), Err(config::ConfigError::Syntax(_))));
 }
 

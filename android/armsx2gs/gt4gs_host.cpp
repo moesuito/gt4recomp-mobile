@@ -34,6 +34,7 @@
 #include "pcsx2/ImGui/ImGuiFullscreen.h"
 #include "pcsx2/ImGui/ImGuiManager.h"
 #include "pcsx2/INISettingsInterface.h"
+#include "pcsx2/Memory.h"
 #include "pcsx2/MTGS.h"
 #include "pcsx2/PerformanceMetrics.h"
 #include "pcsx2/Achievements.h"
@@ -617,6 +618,16 @@ int gt4gs_start(const Gt4gsStartInfo *info) {
   EmuFolders::EnsureFoldersExist();
   VMManager::Internal::LoadStartupSettings();
 
+  // No JIT (owner, 2026-11-06; the project rule): this library maps no executable code memory, so the emulator
+  // initializes no recompiler provider and the GS software rasterizer (used for small texture copies in the hardware
+  // renderer) takes its C++ path. The line is the proof that no code arena exists at run time.
+#ifdef GT4GS_NO_JIT
+  LogLine("no JIT: GT4GS_NO_JIT build; executable code memory %s",
+          SysMemory::HasCodeMemory() ? "PRESENT (unexpected)" : "absent");
+#else
+  LogLine("WARNING: this library was built WITH the JIT enabled");
+#endif
+
   ApplyIniFile(s_config_path.c_str(), false);
   ApplyIniFile(s_overrides_path.c_str(), false);
 
@@ -768,6 +779,12 @@ const char *gt4gs_version(void) { return kVersion; }
 
 const char *gt4gs_renderer_name(void) { return s_renderer_name.c_str(); }
 
-int gt4gs_has_vulkan(void) { return 0; }  // this build has the OpenGL ES back end only (no shaderc sources locally)
+int gt4gs_has_vulkan(void) {
+#ifdef ENABLE_VULKAN
+  return 1;  // the Vulkan back end is compiled in, with shaderc for its run-time shader compilation
+#else
+  return 0;  // OpenGL ES only
+#endif
+}
 
 }  // extern "C"

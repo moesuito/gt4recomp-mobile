@@ -41,6 +41,8 @@ class GameActivity : SDLActivity() {
         const val EXTRA_TEXTS = "io.github.moesuito.gt4recomp.TEXTS"
         // Set by the launcher's Resume: the activity comes back and the game goes on.
         const val EXTRA_RESUME = "io.github.moesuito.gt4recomp.RESUME"
+        // TASK-180 test5: which game library this session loads (gt4 = v2.00, spec2 = Spec II).
+        const val EXTRA_GAME = "io.github.moesuito.gt4recomp.GAME"
         // "<pid> <running|paused> <epoch ms>", rewritten every 2 s (GameBridgePlugin.gameState reads it).
         const val HEARTBEAT_FILE = "game-heartbeat"
         private const val TAG = "GT4Recomp-game"
@@ -97,7 +99,14 @@ class GameActivity : SDLActivity() {
     }
 
     // Load order: SDL3, then the game (the C++ runtime is linked into it); the last one holds SDL_main.
-    override fun getLibraries(): Array<String> = arrayOf("SDL3", "gt4")
+    // TASK-180 test5: one library per game, chosen by the launcher (Extra GAME): libgt4.so (v2.00) or libgt4spec2.so
+    // (Spec II, SCUS-97436). Both are packaged; the Activity loads only its own, so the memory of the other is never mapped.
+    override fun getLibraries(): Array<String> {
+        val game = intent?.getStringExtra(EXTRA_GAME) ?: "gt4"
+        val library = if (game == "spec2") "gt4spec2" else "gt4"
+        Log.i(TAG, "game library: lib$library.so (game $game)")
+        return arrayOf("SDL3", library)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

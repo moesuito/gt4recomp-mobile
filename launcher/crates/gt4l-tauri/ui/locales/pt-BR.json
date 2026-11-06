@@ -625,6 +625,10 @@
   "rust.saves.exported": "Salvo em {path}.",
   "rust.saves.renamed": "Renomeado para {name}.",
   "rust.saves.name_empty": "Digite um nome com letras ou números.",
+  "setting.effect_flares.label": "Reflexo do sol e flares das luzes",
+  "setting.effect_flares.help": "O brilho do sol e os flares das luzes da noite. Desligar é o maior ganho do antigo Modo desempenho: o jogo deixa de ler a tabela de visibilidade dos flares da placa de vídeo a cada quadro, então o processador não espera mais por ela.",
+  "setting.effect_road_sheen.label": "Brilho no asfalto",
+  "setting.effect_road_sheen.help": "O brilho sobre o asfalto que o GT4 desenha como uma passagem de tela cheia. Desligar remove uma passagem de tela cheia por quadro na corrida; o asfalto fica mais opaco e um pouco mais escuro.",
   "setting.fxaa.label": "Antisserrilhamento",
   "setting.fxaa.help": "Suaviza as bordas serrilhadas com um filtro rápido. Deixa os detalhes finos um pouco mais suaves. Desligado por padrão.",
   "setting.performance_mode.label": "Modo de Desempenho",
@@ -957,5 +961,10 @@
   "rust.wheel.unknown_template": "Não existe modelo de volante chamado {name}.",
   "setting.armsx2_textures.label": "Texturas personalizadas",
   "setting.armsx2_textures.help": "Carrega pacotes de texturas com o ARMSX2 GS a partir da pasta escolhida abaixo (os mesmos pacotes e o mesmo formato de pastas do PCSX2 que no PC: a pasta com o serial do jogo e, dentro dela, a pasta replacements). Desligado usa as texturas do próprio jogo. As suas linhas extras de GS ficam no armsx2-gs-extra.ini, ao lado do armsx2-gs.ini na pasta de arquivos do aplicativo.",
-  "settings.textures_current_custom": "Pasta de texturas: {name} (escolhida no celular)"
+  "settings.textures_current_custom": "Pasta de texturas: {name} (escolhida no celular)",
+  "setting.armsx2_upscaler.label": "Upscaler",
+  "setting.armsx2_upscaler.help": "O FSR1 (AMD) e o Snapdragon Super Resolution (Qualcomm) funcionam só no Vulkan: esta opção aparece enquanto o Vulkan está escolhido. No OpenGL ES só a nitidez normal (CAS) é usada.",
+  "choice.armsx2_upscaler.off": "Desligado",
+  "choice.armsx2_upscaler.fsr1": "FSR1 (AMD)",
+  "choice.armsx2_upscaler.sgsr": "Snapdragon Super Resolution"
 }

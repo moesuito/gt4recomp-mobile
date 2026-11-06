@@ -40,6 +40,7 @@ const ANDROID_ONLY_ROWS: &[&str] = &[
     "armsx2_fxaa",
     "armsx2_cas",
     "armsx2_cas_strength",
+    "armsx2_upscaler",
     "armsx2_filter",
     "armsx2_aniso",
     "armsx2_dither",

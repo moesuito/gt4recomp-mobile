@@ -13,7 +13,7 @@ use crate::settings::{self, Settings};
 use crate::version::{ReleaseVersion, Version};
 
 /// Schema of this file (`migrate::SETTINGS`). Files without a schema number are schema 0 and are migrated.
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConfigFile {

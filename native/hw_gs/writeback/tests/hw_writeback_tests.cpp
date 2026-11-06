@@ -3492,17 +3492,31 @@ struct Core2AbRun {
 
 constexpr size_t kGsMemoryBytes = 4u * 1024u * 1024u;
 
-// `onValue` is the switch's value for the "on" run ("" = its default); "0" turns it off.
+// `onValue` is the switch's value for the "on" run ("" = its default); "0" turns it off. `extraEnv` holds further
+// variables set for both runs before the renderer reads them (name, value); cleared afterwards.
+using EnvPairs = std::vector<std::pair<const char*, const char*>>;
+
+void ApplyEnv(const EnvPairs& env) {
+    for (const auto& [name, value] : env) _putenv_s(name, value);
+}
+
+void ClearEnv(const EnvPairs& env) {
+    for (const auto& [name, value] : env) _putenv_s(name, "");
+}
+
 bool ReplayCore2Ab(const gpu::VulkanHandles& handles, const cpuref::CaptureWriter& capture, const char* abSwitch,
                    bool on, Core2AbRun& out, std::string& error, uint32_t memoryFromFrame = 0, uint32_t scale = 2,
-                   const std::function<void(writeback::Renderer&)>& configure = {}, const char* onValue = "") {
+                   const std::function<void(writeback::Renderer&)>& configure = {}, const char* onValue = "",
+                   const EnvPairs& extraEnv = {}) {
     _putenv_s(abSwitch, on ? onValue : "0");
+    ApplyEnv(extraEnv);
     _putenv_s("GT4_HW_CORE", "2");
     writeback::Renderer renderer;
     _putenv_s("GT4_HW_CORE", "");
     renderer.SetScale(scale, static_cast<float>(scale));
     const bool ready = renderer.Init(handles, error);  // some switches are read here
     _putenv_s(abSwitch, "");
+    ClearEnv(extraEnv);
     if (!ready) return false;
     if (configure) configure(renderer);
     if (!renderer.Core2()) {
@@ -3538,13 +3552,14 @@ bool ReplayCore2Ab(const gpu::VulkanHandles& handles, const cpuref::CaptureWrite
 int CheckCore2Ab(const gpu::VulkanHandles& handles, const char* name, const cpuref::CaptureWriter& capture,
                  uint32_t frames, const char* abSwitch, bool exact,
                  const std::function<int(const Core2AbRun& off, const Core2AbRun& on)>& counters,
-                 bool memoryLastOnly = false, uint32_t scale = 2, const char* onValue = "") {
+                 bool memoryLastOnly = false, uint32_t scale = 2, const char* onValue = "",
+                 const EnvPairs& extraEnv = {}) {
     Core2AbRun off, on;
     std::vector<std::vector<uint8_t>> reference;
     std::string error;
     const uint32_t memoryFrom = memoryLastOnly ? frames - 1 : 0;
-    bool ok = ReplayCore2Ab(handles, capture, abSwitch, false, off, error, memoryFrom, scale, {}, onValue) &&
-              ReplayCore2Ab(handles, capture, abSwitch, true, on, error, memoryFrom, scale, {}, onValue);
+    bool ok = ReplayCore2Ab(handles, capture, abSwitch, false, off, error, memoryFrom, scale, {}, onValue, extraEnv) &&
+              ReplayCore2Ab(handles, capture, abSwitch, true, on, error, memoryFrom, scale, {}, onValue, extraEnv);
     if (ok) {
         cpuref::CpuRenderer renderer;
         cpuref::ReplaySummary summary;
@@ -6831,6 +6846,39 @@ int TestCore2GpuClut(const gpu::VulkanHandles& handles) {
                              "1");
     failures += CheckCore2Ab(handles, "submit after a wait, GPU-read ageing", Core2GpuReadAgeingCapture(72), 72,
                              "GT4_CORE2_SUBMIT_AFTER_WAIT", true, afterWaitCounters("GPU-read ageing"), true, 2, "1");
+    // TASK-182 step 3 (O2): waiting for the newest submission's fence only must give the same images and memory as waiting
+    // for every slot, and the newest-fence path must have run on the "on" side and not on the "off" side.
+    auto newestFenceCounters = [](const char* what) {
+        return [what](const Core2AbRun& off, const Core2AbRun& on) {
+            std::printf("  %s: drains %llu / %llu, newest-fence waits %llu / %llu\n", what,
+                        static_cast<unsigned long long>(off.stats.drains), static_cast<unsigned long long>(on.stats.drains),
+                        static_cast<unsigned long long>(off.stats.newestFenceWaits),
+                        static_cast<unsigned long long>(on.stats.newestFenceWaits));
+            return off.stats.drains > 0 && off.stats.newestFenceWaits == 0 && on.stats.newestFenceWaits > 0 ? 0 : 1;
+        };
+    };
+    failures += CheckCore2Ab(handles, "newest fence only, stream over a GPU-read render", Core2StreamOverRenderCapture(6), 6,
+                             "GT4_CORE2_WAIT_NEWEST_FENCE", true, newestFenceCounters("stream over a GPU-read render"));
+    failures += CheckCore2Ab(handles, "newest fence only, GPU-read ageing", Core2GpuReadAgeingCapture(72), 72,
+                             "GT4_CORE2_WAIT_NEWEST_FENCE", true, newestFenceCounters("GPU-read ageing"), true);
+    // TASK-182 step 3: the bounded spin before the blocking wait polls the fence (and may see it signalled) and changes
+    // nothing else; it runs on the newest-fence path, so both runs have that on.
+    auto spinCounters = [](const char* what) {
+        return [what](const Core2AbRun& off, const Core2AbRun& on) {
+            std::printf("  %s: spin polls %llu / %llu, spin hits %llu / %llu\n", what,
+                        static_cast<unsigned long long>(off.stats.spinPolls),
+                        static_cast<unsigned long long>(on.stats.spinPolls),
+                        static_cast<unsigned long long>(off.stats.spinHits),
+                        static_cast<unsigned long long>(on.stats.spinHits));
+            return off.stats.spinPolls == 0 && on.stats.spinPolls > 0 ? 0 : 1;
+        };
+    };
+    failures += CheckCore2Ab(handles, "readback spin, stream over a GPU-read render", Core2StreamOverRenderCapture(6), 6,
+                             "GT4_HW_READBACK_SPIN", true, spinCounters("stream over a GPU-read render"), false, 2, "1",
+                             {{"GT4_CORE2_WAIT_NEWEST_FENCE", "1"}});
+    failures += CheckCore2Ab(handles, "readback spin, GPU-read ageing", Core2GpuReadAgeingCapture(72), 72,
+                             "GT4_HW_READBACK_SPIN", true, spinCounters("GPU-read ageing"), true, 2, "1",
+                             {{"GT4_CORE2_WAIT_NEWEST_FENCE", "1"}});
     // IN-429 / IN-430: batched readbacks and merged dirty rectangles give the same images and memory.
     auto readbackCounters = [](const char* what) {
         return [what](const Core2AbRun& off, const Core2AbRun& on) {
@@ -6984,6 +7032,133 @@ int TestCore2DataPaths(const gpu::VulkanHandles& handles) {
         run("stream over a GPU-read render", Core2StreamOverRenderCapture(6), 6);
     }
     std::printf("hw_core2_data_paths: %d failures\n", failures);
+    return failures == 0 ? 0 : 1;
+}
+
+// TASK-180 test5: replays a capture under an arbitrary set of environment switches (the effect toggles), for the
+// equivalence checks below. The switches are read at init, so they are cleared as soon as the renderer exists.
+bool ReplayWithEnv(const gpu::VulkanHandles& handles, const cpuref::CaptureWriter& capture,
+                   const std::vector<std::pair<const char*, const char*>>& env, Core2AbRun& out, std::string& error,
+                   uint32_t scale = 2) {
+    for (const auto& [name, value] : env) _putenv_s(name, value);
+    _putenv_s("GT4_HW_CORE", "2");
+    writeback::Renderer renderer;
+    _putenv_s("GT4_HW_CORE", "");
+    renderer.SetScale(scale, static_cast<float>(scale));
+    const bool ready = renderer.Init(handles, error);
+    for (const auto& [name, value] : env) {
+        (void)value;
+        _putenv_s(name, "");
+    }
+    if (!ready) return false;
+    if (!renderer.Core2()) {
+        error = "GT4_HW_CORE=2 did not select core 2";
+        return false;
+    }
+    writeback::WritebackReplayTarget target(renderer);
+    cpuref::ReplaySummary summary;
+    const bool ok = cpuref::ReplayCapture(capture.Bytes(), target, summary,
+                                          [&](uint64_t, const cpuref::FrameImage& image) {
+                                              std::vector<uint8_t> rgb;
+                                              for (const display::Rgba8& p : image.image.pixels) {
+                                                  rgb.push_back(p.r);
+                                                  rgb.push_back(p.g);
+                                                  rgb.push_back(p.b);
+                                              }
+                                              out.images.push_back(std::move(rgb));
+                                              const uint8_t* slm = renderer.Slm();
+                                              out.memory.emplace_back(slm, slm + kGsMemoryBytes);
+                                          },
+                                          error);
+    if (const core2::Core2Counters* stats = renderer.Core2Stats()) out.stats = *stats;
+    if (const core2::Core2GpuStats* gpu = renderer.Core2GpuCounters()) out.gpu = *gpu;
+    if (renderer.Failed()) error += " " + renderer.LastError();
+    return ok && !renderer.Failed();
+}
+
+// hw_core2_effect_toggles (TASK-180 test5, owner 2026-11-05): Performance Mode is a set of independent effect switches now.
+// Each new GT4_CORE2_PERF_<ITEM> switch must mean exactly what the older A/B switch of that item means (the same picture
+// and the same GS memory), every effect on must be the picture of today's accurate mode, and every item together must be
+// what GT4_CORE2_PERFORMANCE=1 did. The flare table is answered as zeros under the new name, on a 64 x 8 download.
+int TestCore2EffectToggles(const gpu::VulkanHandles& handles) {
+    int failures = 0;
+    std::string error;
+    const auto sheen = Core2RoadSheenCapture();
+    Core2AbRun new_off, old_off, bundle, all_on;
+    const bool replayed = ReplayWithEnv(handles, sheen, {{"GT4_CORE2_PERF_ROAD_SHEEN", "1"}}, new_off, error) &&
+                          ReplayWithEnv(handles, sheen, {{"GT4_CORE2_ROAD_SHEEN", "0"}}, old_off, error) &&
+                          ReplayWithEnv(handles, sheen,
+                                        {{"GT4_CORE2_PERF_ROAD_SHEEN", "1"}, {"GT4_CORE2_PERF_FLARES", "1"}}, all_on,
+                                        error) &&
+                          ReplayWithEnv(handles, sheen, {{"GT4_CORE2_PERFORMANCE", "1"}}, bundle, error);
+    if (!replayed) {
+        std::printf("  replay failed: %s\n", error.c_str());
+        ++failures;
+    } else {
+        // 1. The new road sheen switch is the old one.
+        const bool same_old = new_off.images == old_off.images && new_off.memory == old_off.memory;
+        std::printf("  road sheen: new switch skips %llu pass(es), old switch %llu, pictures %s\n",
+                    static_cast<unsigned long long>(new_off.gpu.roadSheensSkipped),
+                    static_cast<unsigned long long>(old_off.gpu.roadSheensSkipped), same_old ? "identical" : "DIFFER");
+        if (!same_old || new_off.gpu.roadSheensSkipped == 0) ++failures;
+        // 2. Every effect together is the old Performance Mode bundle.
+        const bool same_bundle = all_on.images == bundle.images && all_on.memory == bundle.memory;
+        std::printf("  all effects off against GT4_CORE2_PERFORMANCE=1: pictures %s\n", same_bundle ? "identical" : "DIFFER");
+        if (!same_bundle) ++failures;
+    }
+
+    // 3. The flare table: GT4_CORE2_PERF_FLARES=1 answers GT4's 64 x 8 visibility table as zeros, exactly as
+    // GT4_GS_HIDE_FLARES=1 (the older name and the GSdx path's switch) does.
+    auto flare_answer = [&](const char* name, const char* value, std::vector<std::uint32_t>& words) {
+        if (name != nullptr) _putenv_s(name, value);
+        _putenv_s("GT4_HW_CORE", "2");
+        writeback::Renderer renderer;
+        _putenv_s("GT4_HW_CORE", "");
+        if (name != nullptr) _putenv_s(name, "");
+        renderer.SetScale(2, 2.0f);
+        std::string init_error;
+        if (!renderer.Init(handles, init_error) || !renderer.Core2()) return false;
+        auto rgbaq = [](uint32_t colour) { return uint64_t{colour} | (uint64_t{0x3F800000u} << 32); };
+        auto xyz = [](uint32_t x, uint32_t y) { return uint64_t{x * 16} | (uint64_t{y * 16} << 16); };
+        std::vector<Qword> stream;
+        stream.push_back(PackedTag(14, true, 0, {0xE}));
+        stream.push_back(Qword{uint64_t{0} | (uint64_t{1} << 16), 0x4C});
+        stream.push_back(Qword{uint64_t{64} | (uint64_t{1} << 32), 0x4E});
+        stream.push_back(Qword{(uint64_t{63} << 16) | (uint64_t{63} << 48), 0x40});
+        stream.push_back(Qword{0, 0x18});
+        stream.push_back(Qword{(uint64_t{1} << 16) | (uint64_t{1} << 17), 0x47});
+        stream.push_back(Qword{6, 0x00});
+        stream.push_back(Qword{rgbaq(0x80336699u), 0x01});
+        stream.push_back(Qword{xyz(0, 0), 0x05});
+        stream.push_back(Qword{xyz(64, 8), 0x05});
+        stream.push_back(Qword{uint64_t{0} | (uint64_t{1} << 16), 0x50});
+        stream.push_back(Qword{0, 0x51});
+        stream.push_back(Qword{uint64_t{64} | (uint64_t{8} << 32), 0x52});
+        stream.push_back(Qword{1, 0x53});
+        stream.push_back(Qword{0, 0x7F});
+        if (!renderer.GifTransfer(1, reinterpret_cast<const uint8_t*>(stream.data()), stream.size() * sizeof(Qword))) {
+            return false;
+        }
+        words.assign(64 * 8, 0xFFFFFFFFu);
+        return renderer.ReadFifo(words.data(), words.size() * 4) == words.size() * 4;
+    };
+    std::vector<std::uint32_t> by_new, by_old, by_none;
+    if (!flare_answer("GT4_CORE2_PERF_FLARES", "1", by_new) || !flare_answer("GT4_GS_HIDE_FLARES", "1", by_old) ||
+        !flare_answer(nullptr, "", by_none)) {
+        std::printf("  flare table: the streams could not be read\n");
+        ++failures;
+    } else {
+        const auto zeros = [](const std::vector<std::uint32_t>& words) {
+            return std::all_of(words.begin(), words.end(), [](std::uint32_t word) { return word == 0u; });
+        };
+        const auto drawn = [](const std::vector<std::uint32_t>& words) {
+            return std::all_of(words.begin(), words.end(), [](std::uint32_t word) { return word == 0x80336699u; });
+        };
+        std::printf("  flare table: new switch %s, old switch %s, every effect on %s\n", zeros(by_new) ? "zeros" : "NOT zeros",
+                    zeros(by_old) ? "zeros" : "NOT zeros", drawn(by_none) ? "the drawn words" : "NOT the drawn words");
+        if (!zeros(by_new) || by_new != by_old || !drawn(by_none)) ++failures;
+    }
+    std::printf("hw_core2_effect_toggles: %d failures\n", failures);
     return failures == 0 ? 0 : 1;
 }
 
@@ -7648,6 +7823,7 @@ int main(int argc, char** argv) {
     if (name == "hw_core2_point_quads") return TestCore2PointQuads(handles);
     if (name == "hw_core2_sync_trace") return TestCore2SyncTrace(handles);
     if (name == "hw_core2_data_paths") return TestCore2DataPaths(handles);
+    if (name == "hw_core2_effect_toggles") return TestCore2EffectToggles(handles);
     if (name == "hw_core2_present_scale") return TestCore2PresentScale(handles);
     if (name == "hw_core2_forced_bilinear") return TestCore2ForcedBilinear(handles);
     std::printf("unknown test: %s\n", name.c_str());

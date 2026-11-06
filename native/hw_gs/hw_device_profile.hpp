@@ -157,6 +157,9 @@ struct DeviceProfile {
   std::uint32_t api_version = 0, driver_version = 0;
   DeviceClass device_class = DeviceClass::tiler_or_unknown;
   bool integrated_defaults = false;
+  // TASK-182 step 3: a memory type that is both device-local and host-visible, i.e. the memory the CPU and the GPU both
+  // use without a copy (an APU or a phone). The class above says what the device is; this says how its memory behaves.
+  bool unified_memory = false;
 
   // Features that drawing at a scale above 1x relies on. `*_supported` is what the device has, `*_enabled` what the
   // device was created with (the creator sets it); the renderer keys its paths off `*_enabled`.
@@ -200,12 +203,14 @@ inline std::string profile_line(const DeviceProfile &p) {
   char text[512];
   auto yes = [](bool value) { return value ? "yes" : "no"; };
   std::snprintf(text, sizeof text,
-                "%s, vendor %s (0x%04X) device 0x%04X, class %s, integrated defaults %s, Vulkan %u.%u.%u; "
+                "%s, vendor %s (0x%04X) device 0x%04X, class %s, device-local host-visible memory %s, integrated defaults %s, "
+                "Vulkan %u.%u.%u; "
                 "large points %s (max %.1f, %s), wide lines %s (max %.1f, not used), "
                 "storage image array dynamic indexing %s (%s); memory budget %s",
                 p.name.c_str(), vendor_name(p.vendor_id), p.vendor_id, p.device_id, device_class_name(p.device_class),
-                p.integrated_defaults ? "on" : "off", p.api_version >> 22, (p.api_version >> 12) & 0x3FFu,
-                p.api_version & 0xFFFu, yes(p.large_points_supported), static_cast<double>(p.point_size_max),
+                p.unified_memory ? "yes" : "no", p.integrated_defaults ? "on" : "off", p.api_version >> 22,
+                (p.api_version >> 12) & 0x3FFu, p.api_version & 0xFFFu, yes(p.large_points_supported),
+                static_cast<double>(p.point_size_max),
                 p.large_points_enabled ? "enabled" : "points drawn as quads above 1x", yes(p.wide_lines_supported),
                 static_cast<double>(p.line_width_max), yes(p.storage_image_array_dynamic_indexing_supported),
                 p.storage_image_array_dynamic_indexing_enabled ? "enabled" : "constant-index shader",
@@ -230,6 +235,41 @@ inline std::string profile_line(const DeviceProfile &p) {
             std::to_string(p.types[i].heap);
   }
   return line;
+}
+
+// ---- TASK-182 step 3: the K rule's device default (row 2 of STUDY-ASYNC-READBACK 9.1) -----------------------------
+//
+// The K rule (GT4_CORE2_SUBMIT_AFTER_WAIT) submits again K draw batches after a waited readback, so the GPU is not left
+// idle while the GS worker records its way back to the next submission. That bubble is the product of two things: how
+// long the CPU records before the next submission, and whether the GPU had queued work at all. It is largest on the
+// devices with a slow CPU against a fast GPU and a bursty drain: the tile-based mobile GPUs (Adreno, Mali, PowerVR,
+// Apple, Xclipse) and the unified-memory parts (an APU, where the GPU's work competes with the CPU for the same memory).
+// On a discrete desktop GPU the measured wall gain is small on a fast CPU (TASK-178 9.3: -0.9..-2.4 ms in the medians
+// under another agent's load, but the least disturbed pair differed by 0.07 ms), so K stays 0 there unless a device's own
+// A/B says otherwise.
+//
+//   tiler_or_unknown: on (K = 8): the tile-based mobile GPUs, and software/virtual devices, which have no better data.
+//   integrated:       on (K = 8) when the memory is unified (a memory type that is device-local and host-visible, or the
+//                     integrated device type GT4's APU defaults already follow); off otherwise.
+//   discrete:         off (K = 0).
+inline bool k_rule_default_on(const DeviceProfile &profile) {
+  if (profile.device_class == DeviceClass::discrete) return false;
+  if (profile.device_class == DeviceClass::tiler_or_unknown) return true;
+  return profile.unified_memory || profile.integrated_defaults;
+}
+
+constexpr std::uint32_t kRuleDefaultBatches = 8;  // the study's suggestion for a tiler (submitEvery is 32 there)
+
+inline std::uint32_t k_rule_default_batches(const DeviceProfile &profile) {
+  return k_rule_default_on(profile) ? kRuleDefaultBatches : 0u;
+}
+
+// Why the rule is on or off there, for the [core2] submissions line of game.log.
+inline const char *k_rule_default_reason(const DeviceProfile &profile) {
+  if (profile.device_class == DeviceClass::discrete) return "discrete GPU";
+  if (profile.device_class == DeviceClass::tiler_or_unknown) return "tile-based or unknown GPU";
+  if (profile.unified_memory) return "unified memory";
+  return "integrated GPU with its own memory";
 }
 
 // ---- Core 2's host-visible rings, sized from the device (TASK-179) -------------------------------------------------

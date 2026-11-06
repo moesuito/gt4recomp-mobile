@@ -334,7 +334,7 @@ std::uint32_t run_scenario(const std::string &scenario, const std::vector<Env> &
                            "GT4_GS_CAPTURE_FRAMES", "GT4_GS_FRAMES_IN_FLIGHT", "GT4_FIXTURE_CHILD",
                            "GT4_GS_PROCESS_SHA256", "GT4_GS_CONFIG", "GT4_GS_HANDSHAKE_TIMEOUT_MS",
                            "GT4_GS_LOST_GRACE_FRAMES", "GT4_FIXTURE_PID_FILE", "GT4_GS_READBACK_LOCAL",
-                           "GT4_GS_HIDE_FLARES", "GT4_GS_READBACK_LOG"})
+                           "GT4_GS_HIDE_FLARES", "GT4_CORE2_PERF_FLARES", "GT4_GS_READBACK_LOG"})
     _putenv_s(name, "");
   for (const Env &item : env) _putenv_s(item.name, item.value.c_str());
   std::printf("[fixture] scenario %s\n", scenario.c_str());
@@ -791,6 +791,27 @@ int main(int argc, char **argv) {
       require(served == 3 && last_id == 3, "hidden flares: one READ_FIFO per readback, in stream order");
     }
     std::puts("[fixture] GT4_GS_HIDE_FLARES=1 answers the flare table as zeros and keeps the icons");
+
+    // TASK-180 test5: the effect toggle's own name does the same on the game side, so the GSdx path honours the
+    // Settings row without the older switch (the launcher sends both; a diagnosis build may send one).
+    const std::string effect_result = scratch + "\\effect-hide.pid";
+    DeleteFileA((effect_result + ".pattern").c_str());
+    require(run_scenario("pcsx2-hidden", {{"GT4_RENDERER", "pcsx2"}, {"GT4_GS_PROCESS", argv[0]},
+                                          {"GT4_FIXTURE_CHILD", "pattern"}, {"GT4_FIXTURE_PID_FILE", effect_result},
+                                          {"GT4_GS_CONFIG", local_config}, {"GT4_GS_READBACK_LOCAL", "1"},
+                                          {"GT4_CORE2_PERF_FLARES", "1"}}) == 0,
+            "pcsx2-hidden scenario through the effect toggle");
+    {
+      std::ifstream in(effect_result + ".pattern");
+      std::uint64_t served = 0, last_id = 0;
+      in >> served >> last_id;
+      if (served != 3 || last_id != 3) {
+        std::printf("[fixture] the effect toggle served %llu with last id %llu\n",
+                    static_cast<unsigned long long>(served), static_cast<unsigned long long>(last_id));
+      }
+      require(served == 3 && last_id == 3, "the effect toggle: one READ_FIFO per readback, in stream order");
+    }
+    std::puts("[fixture] GT4_CORE2_PERF_FLARES=1 answers the flare table the same way on the GSdx path");
 
     // TASK-117: GT4_GS_READBACK_LOCAL=1 also works with gt4-gs HWDownloadMode 0 (Accurate), so the flare table can be
     // answered locally while the car icons, loading picture and thumbnail stay Accurate (the mode-0 experiment).

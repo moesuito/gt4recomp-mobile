@@ -20,10 +20,12 @@ if not exist "%APP%\libs" mkdir "%APP%\libs"
 rem libgt4.so without its line tables (they stay in the build folder, for llvm-symbolizer) but with its symbol table, so a
 rem tombstone names the functions; Gradle keeps it as staged (keepDebugSymbols in app/build.gradle.kts).
 "%GT4_ANDROID_NDK%\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe" --strip-debug -o "%JNI%\libgt4.so" "%BUILD%\libgt4.so" || exit /b 1
+rem TASK-180 test5: the Spec II library ships in the same APK, one per game (the game Activity loads the chosen one).
+if exist "%BUILD%\libgt4spec2.so" "%GT4_ANDROID_NDK%\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe" --strip-debug -o "%JNI%\libgt4spec2.so" "%BUILD%\libgt4spec2.so" || exit /b 1
 copy /y "%SDL%\aar\prefab\modules\SDL3-shared\libs\android.%ABI%\libSDL3.so" "%JNI%\libSDL3.so" >nul || exit /b 1
 copy /y "%SDL%\pkg\SDL3-3.4.18.aar" "%APP%\libs\SDL3-3.4.18.aar" >nul || exit /b 1
 if exist "%JNI%\libc++_shared.so" del "%JNI%\libc++_shared.so"
-echo staged %ABI%: libgt4.so libSDL3.so and SDL3-3.4.18.aar
+echo staged %ABI%: libgt4.so [libgt4spec2.so] libSDL3.so and SDL3-3.4.18.aar
 exit /b 0
 :usage
 echo usage: stage-native-libs.cmd ^<x86_64^|arm64-v8a^> ^<android/native build folder^>

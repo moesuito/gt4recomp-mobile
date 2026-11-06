@@ -625,6 +625,10 @@
   "rust.saves.exported": "Saved to {path}.",
   "rust.saves.renamed": "Renamed to {name}.",
   "rust.saves.name_empty": "Type a name with letters or numbers.",
+  "setting.effect_flares.label": "Sun glare and light flares",
+  "setting.effect_flares.help": "The sun's glare and the night lights' flares. Turning them off is the biggest speed gain of the old Performance Mode: the game no longer reads the flare visibility table back from the graphics card every frame, so the processor never waits for it.",
+  "setting.effect_road_sheen.label": "Road sheen",
+  "setting.effect_road_sheen.help": "The shine over the road that GT4 draws as a full-screen pass. Turning it off removes a whole-screen pass every frame in a race; the road looks duller and a little darker.",
   "setting.fxaa.label": "Anti-aliasing",
   "setting.fxaa.help": "Smooths jagged edges with a fast filter. It softens fine detail a little. Off by default.",
   "setting.performance_mode.label": "Performance Mode",
@@ -957,5 +961,10 @@
   "rust.wheel.unknown_template": "There is no wheel template named {name}.",
   "setting.armsx2_textures.label": "Custom textures",
   "setting.armsx2_textures.help": "Load texture packs with the ARMSX2 GS from the folder chosen below (the same packs and the same PCSX2 folder layout as on the PC: the game's serial folder with its replacements folder). Off uses the game's own textures. Your own extra GS lines go into armsx2-gs-extra.ini, beside armsx2-gs.ini in the app's files folder.",
-  "settings.textures_current_custom": "Textures folder: {name} (chosen on this phone)"
+  "settings.textures_current_custom": "Textures folder: {name} (chosen on this phone)",
+  "setting.armsx2_upscaler.label": "Upscaler",
+  "setting.armsx2_upscaler.help": "FSR1 (AMD) and Snapdragon Super Resolution (Qualcomm) work only on Vulkan: this row appears while Vulkan is chosen. Under OpenGL ES only the normal sharpening (CAS) is used.",
+  "choice.armsx2_upscaler.off": "Off",
+  "choice.armsx2_upscaler.fsr1": "FSR1 (AMD)",
+  "choice.armsx2_upscaler.sgsr": "Snapdragon Super Resolution"
 }

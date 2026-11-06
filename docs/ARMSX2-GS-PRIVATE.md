@@ -1,7 +1,8 @@
 # Private test build: ARMSX2's GS inside the GT4Recomp Android app (owner's phone only)
 
-Status: 2026-11-06 (1.3.0-rc15), **PRIVATE and PCSX2-tainted, GPL-3.0+**. Never distributed, never merged, never
-pushed. This clone
+Status: 2026-11-06 (1.3.0-rc15, round 4), **PRIVATE and PCSX2-tainted, GPL-3.0+**. Never distributed, never merged,
+never pushed. **The GS in this build has no JIT:** no run-time machine code is generated and no executable code memory is
+mapped (build flag `GT4GS_NO_JIT`). This clone
 (`gt4-private-armsx2gs`, branch `private/armsx2-gs-s23`) has its push URL disabled on purpose.
 
 ## What it is
@@ -180,6 +181,110 @@ does not carry: `3rdparty/shaderc` and its glslang / SPIRV-Tools / SPIRV-Headers
 building them for arm64; the brief allows stopping there, so the library keeps OpenGL ES, `gt4gs_has_vulkan()` returns 0,
 a Vulkan request falls back with a `game.log` line, and FSR1 / Snapdragon Super Resolution stay unoffered (they are
 Vulkan-only in this ARMSX2).
+
+
+## Round 4 (owner, 2026-11-06): no JIT, test5, the CoreGS HUD, VSync and frame rate rows, Vulkan
+
+### No JIT
+
+**What was there.** The ARMSX2 tree carries three run-time code generators:
+- the GS software rasterizer's scanline and setup-prim generators (`GSDrawScanlineCodeGenerator`, `GSSetupPrimCodeGenerator`,
+  xbyak on x86 and vixl on arm64, through `GSNewCodeGenerator` and `GSCodeReserve`);
+- the emulator's ARM64 guest recompilers (EE `arm64/iR5900-*`, IOP `iR3000A-*`, microVU, VIF), all vixl emitters;
+- the executable code arena `SysMemory` maps at boot (`HostMemoryMap` code region), which is what `HasCodeMemory()` tests.
+
+**What was done.** A `GT4GS_NO_JIT` build (`platforms/android/app/src/main/cpp/CMakeLists.txt`, a CMake option plus the
+compile definition):
+- the GS scanline/setup-prim generators are not compiled (`pcsx2/CMakeLists.txt`), `GSDrawScanline` always takes its
+  C++ rasterizer (`CSetupPrim` / `CDrawScanline`) and `GSCodeGeneratorFunctionMap` never generates;
+- `SysMemory` maps **no** executable memory and logs it; `HasCodeMemory()` stays false, so
+  `VMManager::InitializeCPUProviders` initializes no recompiler provider, `UpdateCPUImplementations` selects the
+  interpreters, and the GS-only VM uses the stream CPU provider as before. Nothing in the shipped library can generate
+  code at run time.
+
+**Proof (final APK).**
+- `game.log`: `[gt4gs] no JIT: GT4GS_NO_JIT build; executable code memory absent` and
+  `GT4GS_NO_JIT: no executable code memory is mapped (no JIT)`.
+- `llvm-nm libgt4gs.so`: no `GSDrawScanlineCodeGenerator`/`GSSetupPrimCodeGenerator` code (only the function-map template
+  metadata), and no xbyak symbols at all (x86 only, never in this arm64 build).
+- The game reaches the title/boot and the Vulkan back end renders (screenshots below) with the deviceless renderer too.
+
+**Cost and limits.** The hardware renderer uses the C++ rasterizer only for its small palette/texel copy path; at 2x in
+the emulator the GS thread stays around 5-13 ms/frame, the same order as before. The SW renderer itself is never
+selected. The ARM64 **guest** recompilers (EE/IOP/VU/VIF) are still linked (vixl symbols are in the binary) because the
+emulator's provider table references them; they cannot run without code memory and the GS-only VM never uses them.
+Removing that dead weight from the link is a separate, larger surgery.
+
+### The Performance HUD is CoreGS 2.0's
+
+`gt4gs_hud.cpp` now reproduces the CoreGS 2.0 panel (TASK-135): top right with a 12 px margin, black 63% rounded
+background, the same 36-column layout and font size rule (`clamp(window/1080*16, 12, 44)` px), the same line order and
+labels — graphics device name, processor/SoC name, renderer and scale with `[WxH] Hz` on the right, `FPS:   x [low high]`,
+`Frame: x [low high] ms`, `CPU:  n%`, `GPU:  n%`, `Mem:` / `VRAM:`, `Report: Idle|Recording|Saved` — the same colours
+(white, light red, light blue, light green, dim) and number formats, the same 500 ms text pace, the same 5-line
+frame-time graph (50 ms top, guides at one and two 60 Hz frames, blue line, red spikes), and the same FPS-only panel
+(10 columns, `%5.1f FPS`). The renderer row says `GSdx (ARMSX2)`; every other reading comes from the same sources CoreGS
+uses on Android (process CPU time, `/proc/self/statm`, the SoC properties with the marketing name, the Adreno driver's
+kgsl busy share), and a reading Android does not give the app shows `n/a`/`--` instead of a guess. The GPU row is now the
+driver's busy percentage, exactly as CoreGS shows it: the old "0.68 ms" line was this library's GS device timer, not the
+whole GPU frame, and it is gone.
+
+Limits: the game's F7/F8 report state lives in the game library, so the GS library can only show `Report: Idle` when the
+launcher's report is on (`GT4_PERF`); it cannot see Recording/Saved across the `.so` boundary. The FPS-only panel and the
+full panel were checked in the emulator side by side with CoreGS (screenshots below).
+
+### VSync and frame rate rows under GSdx (ARMSX2)
+
+- **VSync** is no longer CoreGS-only: the row shows with GSdx (ARMSX2). The value goes into `armsx2-gs.ini` as
+  `VsyncEnable` (and `DisableMailboxPresentation` for the mailbox bit) through the same table row the PC's gt4-gs gets.
+  Emulator: `vsync on` in the launcher's plan line and `VsyncEnable = true` in the ini.
+- **Frame rate (experimental)** is no longer CoreGS-only either: the ARMSX2 plan *is* the CoreGS plan, so the row passes
+  `GT4_FRAME_SKIP` / `GT4_FRAME_SKIP_FORCE` to the game exactly as CoreGS does. Emulator: `frame rate 30` in the plan
+  line and `GT4_FRAME_SKIP_FORCE=2` in the game's start line.
+
+### Vulkan back end and FSR1
+
+**Sources and versions.** The Android ARMSX2 tree already vendors shaderc (`3rdparty/shaderc`, `v2026.2-dev` per its
+`CHANGES`); its DEPS pins glslang `09c541ee5b22bbac307987b50d86ec2b4f683d75`, SPIRV-Headers
+`465055f6c9128772e20082e893d974146acf7a02` and SPIRV-Tools `e4bceacf59fdfe742047e94e41ef65a48999a0dd`. (The clone's own
+Android CI pins shaderc `v2025.4` and glslang `7a47e253...`, but it does not match the vendored Android tree, so the
+tree's own DEPS were used.) The three Khronos repositories were downloaded at those exact revisions into
+`private/armsx2-vendor/platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/` (ignored, never tracked).
+
+**Build and result.** `libgt4gs.so` is built with `USE_VULKAN=ON` and links the shaderc/glslang/SPIRV-Tools static
+libraries; `gt4gs_has_vulkan()` now reports 1. The emulator's Vulkan (Lavapipe, Vulkan 1.3) opens a swapchain, compiles
+its pipelines at run time through shaderc (`Vulkan: wrote ... bytes of pipeline cache`) and renders the game: the v2.00
+build and the HUD screenshots below come from that run. OpenGL ES stays the default API; Vulkan is "Vulkan
+(experimental)"; a Vulkan start failure falls back to OpenGL ES with the existing log line.
+
+**FSR1 and SGSR.** A new "Upscaler" row (Off / FSR1 (AMD) / Snapdragon Super Resolution) is visible **only while Vulkan is
+chosen** (`visible_when: armsx2_api == vk`); under OpenGL ES the row is hidden and the ini always writes `Upscaler = 0`,
+so only the normal sharpening (CAS) is used. The values are ARMSX2's own `GSUpscaler` enum (`2` FSR1, `3` SGSR). Emulator
+proof: `Upscaler = 2` in the ini and `@@ANDROID_FSR1@@ upscaling 1280x896 -> 1928x1080 (sharpness 50)` in `game.log`.
+No upscaler is written by us.
+
+### test5 merged, Spec II on Android
+
+`origin/task/180-android-emulator` at `7f2e6c43` (effect toggles `42268f4b`, Spec II `593fabed`) is merged into
+`private/armsx2-gs-s23`; the conflicts (STATUS, the 2026-11-06 journal, the model row test) were resolved keeping both
+sides. The effect toggles show under GSdx (ARMSX2): "Sun glare and light flares" is a shared row (the game side answers it
+before the stream leaves), the road sheen stays CoreGS-only. A TASK-186 correction (a GSdx "Blending accuracy" toggle) had
+not landed by `7f2e6c43`, so there was nothing to map; ARMSX2 keeps its High blending accuracy.
+
+**Spec II check.** The PT-BR Spec II image (`Gran Turismo 4 Spec II v1.10 (PTBR).iso`) was picked with the system picker;
+the launcher identified it (`disc accepted as spec2: SCUS-97436 v1.10`), set it up (`Gran Turismo 4 Spec II v1.10 (PT-BR)
+is ready`), and Play used the Spec II library and its own folder: `[mc] card in slot 1:
+.../data/games/spec2/runtime/card.ps2`, and the ARMSX2 GS now receives the right serial from the launcher
+(`GT4_GAME_SERIAL`): `[gt4gs] game: title 'Gran Turismo 4 [Online Public Beta]', serial 'SCUS-97436'`. It runs with the
+Vulkan renderer and the stream advances (2700+ VSyncs, HUD full) in the emulator; the picture stayed black there (ARM
+translation + this image), which is as far as this emulator lets Spec II go. The APK grew by **83,079,506 bytes** with the
+second library (143,919,214 to 226,998,720 before the FSR row, 227,015,104 final).
+
+### Final APK (rc15, round 4)
+
+`GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionName `1.3.0-rc15`, versionCode **103001502**, owner's release key,
+**227,015,104 bytes**, sha256 `b86066309d52f093864f49af9c01052b6f33e8a1dfb6c65f5c6fe32ab1207c32`, `symbols/` with
+`libgt4`, `libgt4spec2` and `libgt4gs` unstripped. Screenshots: `build/evidence/t180-rc15b/` (ignored).
 
 ## Logging
 

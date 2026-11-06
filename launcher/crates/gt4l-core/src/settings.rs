@@ -84,6 +84,14 @@ pub const CORE_GS_20: &str = "coregs20";
 /// never offered on Windows.
 pub const ARMSX2_GS: &str = "armsx2";
 
+/// The Vulkan-only upscalers (owner, 2026-11-06): ARMSX2's own `Upscaler` values. OpenGL ES keeps the plain picture
+/// plus CAS.
+const ARMSX2_UPSCALER_CHOICES: &[Choice] = &[
+    Choice { value: "off", label: "Off", selectable: true },
+    Choice { value: "fsr1", label: "FSR1 (AMD)", selectable: true },
+    Choice { value: "sgsr", label: "Snapdragon Super Resolution", selectable: true },
+];
+
 const RENDERER_CHOICES: &[Choice] = &[
     Choice { value: PCSX2_GS, label: "GSdx", selectable: true },
     Choice { value: CORE_GS_20, label: "CoreGS 2.0", selectable: true },
@@ -284,6 +292,16 @@ pub const SETTINGS: &[SettingDef] = &[
         info: "Strength of the ARMSX2 GS sharpening (0 to 100). Used when sharpening is on.",
         kind: Kind::Steps { min: 0, max: 100, step: 1 },
         default: "50",
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_upscaler",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "Upscaler",
+        info: "FSR1 (AMD) and Snapdragon Super Resolution (Qualcomm) work only on the Vulkan back end: they appear while                Vulkan is chosen and are off under OpenGL ES, which has only the normal sharpening. Off keeps the plain                picture; the render scale still sets the internal resolution.",
+        kind: Kind::Choice(ARMSX2_UPSCALER_CHOICES),
+        default: "off",
         connected: true,
     },
     SettingDef {
@@ -665,6 +683,11 @@ impl Settings {
     /// Whether a shown row can be changed now: it is connected to the game.
     pub fn is_active(&self, id: &str) -> bool {
         definition(id).map(|definition| definition.connected).unwrap_or(false)
+    }
+
+    /// Whether a GS table toggle is on (TASK-180 test5: the effect toggles read `[gs] effect_<name> = true`).
+    pub fn gs_is_on(&self, id: &str) -> bool {
+        self.gs_value(id) == "true"
     }
 
     /// A PCSX2 GS table value (`gs_table`), or its table default when the user has not set it.

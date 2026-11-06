@@ -229,8 +229,12 @@ bool readback_local_switch(int download_mode) {
 
 // TASK-117: GT4_GS_HIDE_FLARES, the A/B switch of the no-flare traffic. Unset = `fallback` (on with the local answer);
 // 0 keeps the previous reply, so the night lights and the sun glare come back exactly as in rc6 step 1.
+// TASK-180 test5: GT4_CORE2_PERF_FLARES is the effect toggle's own name (1 = the effect off, the same meaning it has in
+// CoreGS 2.0 and in the sink); the launcher sends GT4_GS_HIDE_FLARES, and a diagnosis build may send only the new one.
+// The older name wins when both are set, so its A/B keeps working.
 bool hide_flares_switch(bool fallback) {
   const char *value = std::getenv(kHideFlaresSwitch);
+  if (!value || !*value) value = std::getenv("GT4_CORE2_PERF_FLARES");
   if (!value || !*value) return fallback;
   if (std::strcmp(value, "1") == 0) return true;
   if (std::strcmp(value, "0") == 0) return false;

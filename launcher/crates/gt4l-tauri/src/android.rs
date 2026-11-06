@@ -110,6 +110,8 @@ struct GameArgs<'a> {
     environment: Vec<String>,
     /// The pause dialog's texts in the launcher's language: title, keep playing, minimize, close game.
     texts: Vec<String>,
+    /// TASK-180 test5: `gt4` (v2.00) or `spec2`; the game Activity loads the matching library.
+    game: &'a str,
 }
 
 /// What the bridge knows about the game's process (`gameState`).
@@ -448,11 +450,10 @@ struct BenchRequest {
 }
 
 impl BenchRequest {
-    /// Whether the game library a bench asks for is in this app: v2.00 (`libgt4.so`) always; Spec II only when
-    /// `libgt4spec2.so` is packaged (TASK-180 part B: the Spec II arm64 library is a plan in the port plan, not shipped
-    /// in this APK, so a bench for it is refused instead of starting v2.00's library with Spec II's ELF).
+    /// Whether the game library a bench asks for is in this app. TASK-180 test5: both are, `libgt4.so` for v2.00 and
+    /// `libgt4spec2.so` for Spec II, so every bench the port offers starts the library its game needs.
     fn has_library(&self, game: &gt4l_core::games::Game) -> bool {
-        game.id == gt4l_core::games::GT4.id
+        game.id == gt4l_core::games::GT4.id || game.id == gt4l_core::games::SPEC2.id
     }
 }
 
@@ -806,11 +807,17 @@ pub fn save_document(source: &Path, name: &str, mime_type: &str) -> Result<bool,
     Ok(saved.saved)
 }
 
-/// Starts the game activity (`:game` process) with the launch contract.
-pub fn start_game(arguments: &[String], environment: &[(String, String)], texts: Vec<String>) -> Result<(), String> {
+/// Starts the game activity (`:game` process) with the launch contract. `game` picks the library: `gt4` (v2.00) or
+/// `spec2` (Spec II, TASK-180 test5).
+pub fn start_game(
+    arguments: &[String],
+    environment: &[(String, String)],
+    texts: Vec<String>,
+    game: &str,
+) -> Result<(), String> {
     let environment = environment.iter().map(|(name, value)| format!("{name}={value}")).collect();
     let _: Done = bridge()?
-        .run_mobile_plugin("startGame", GameArgs { arguments, environment, texts })
+        .run_mobile_plugin("startGame", GameArgs { arguments, environment, texts, game })
         .map_err(|error| format!("game start: {error}"))?;
     Ok(())
 }
@@ -1000,12 +1007,6 @@ pub fn play(shared: &Shared) -> Result<(), String> {
     // synced. `GT4_BENCH_GAME` picks the game (gt4 or spec2) the bench starts, whatever the home page shows.
     let bench = bench_request(&debug, &data_dirs)?;
     let game = bench.game.unwrap_or(state.selected);
-    if bench.game.is_some() && !bench.has_library(game) {
-        // Part B (the Spec II game library for arm64) is not in this APK yet: refuse instead of starting the wrong game.
-        let message = format!("bench: GT4_BENCH_GAME={} has no game library in this APK (libgt4spec2.so); Play refused", game.id);
-        state::log_error(&data_dirs, &message);
-        return Err(message);
-    }
     let disc = match state.installed_of(game) {
         Installed::Ready { image, .. } => image,
         Installed::NotSetUp => return Err(messages::text("game.set_up_first", language).into()),
@@ -1062,7 +1063,8 @@ pub fn play(shared: &Shared) -> Result<(), String> {
         None => card.clone(),
     };
     let inputs = LaunchInputs {
-        game_executable: Path::new("libgt4.so"),
+        // TASK-180 test5: one game library per game, both packaged in the APK (android/stage-native-libs.cmd).
+        game_executable: Path::new(if game.id == "spec2" { "libgt4spec2.so" } else { "libgt4.so" }),
         elf: &elf,
         disc: &disc,
         card: &session_card,
@@ -1117,8 +1119,10 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             state::log(
                 &data_dirs,
                 &format!(
-                    "graphics: renderer GSdx (ARMSX2) in process, multiplier {}x, settings {}, extra {}",
+                    "graphics: renderer GSdx (ARMSX2) in process, multiplier {}x, vsync {}, frame rate {}, settings {}, extra {}",
                     gt4l_core::launch::format_multiplier(gt4l_core::launch::armsx2_multiplier(&settings, display.as_ref())),
+                    settings.get("vsync"),
+                    settings.get("frame_rate"),
                     paths.config.display(),
                     paths.overrides.display()
                 ),
@@ -1126,8 +1130,15 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             plan.environment.retain(|(name, _)| name != "GT4_RENDERER");
             plan.environment.push(("GT4_RENDERER".into(), "armsx2".into()));
             plan.environment.push(("GT4_ARMSX2_GS_DIR".into(), paths.root.display().to_string()));
+            // The game's serial, so the GS reads its own texture folder and GameDB entry (v2.00 or Spec II).
+            plan.environment.push(("GT4_GAME_SERIAL".into(), game.serial.to_string()));
             plan.environment.push(("GT4_ARMSX2_GS_CONFIG".into(), paths.config.display().to_string()));
             plan.environment.push(("GT4_ARMSX2_GS_OVERRIDES".into(), paths.overrides.display().to_string()));
+            // The display mode the HUD's right-hand row shows ("[2400x1080] 60Hz"), the same environment name the
+            // launcher's own display model reads. The library has no other way to ask Android for the refresh rate.
+            if let Some((size, hertz)) = screen() {
+                plan.environment.push(("GT4_ANDROID_DISPLAY".into(), format!("{}x{}@{}", size.width, size.height, hertz)));
+            }
             // The API row (OpenGL ES by default, Vulkan experimental) and the performance HUD, which the library draws
             // itself (the game's own HUD belongs to CoreGS 2.0).
             plan.environment.push(("GT4_ARMSX2_GS_RENDERER".into(), settings.get("armsx2_api").to_string()));
@@ -1155,10 +1166,14 @@ pub fn play(shared: &Shared) -> Result<(), String> {
     // picture and the second copy into the swapchain image (about 36 MB per presented frame at 3088x1440, STUDY-UNIFIED
     // MEMORY 4.2) disappear. Presentation only, so the picture is exact. debug.env still overrides it.
     plan.environment.push(("GT4_HW_PRESENT_QUEUE".into(), "0".into()));
+    // TASK-182 step 3 measured on the owner's S23 showroom bench: a submission every 128 draw batches gave +11.6% VBlanks/s
+    // and 32% fewer render passes. Only submission boundaries change, never what is drawn. The K rule's device default
+    // (8 batches after a waited readback on a tiler) is clamped to this value by the renderer, so the two never fight.
+    plan.environment.push(("GT4_CORE2_SUBMIT_EVERY".into(), "128".into()));
     state::log(
         &dirs,
         "android defaults: GT4_CORE2_DEINT_FIELD_COMPOSE=1, GT4_CORE2_DEINT_SKIP_DECISION=1 (TASK-182, exact), \
-         GT4_HW_PRESENT_QUEUE=0 (single-queue present)",
+         GT4_HW_PRESENT_QUEUE=0 (single-queue present), GT4_CORE2_SUBMIT_EVERY=128 (TASK-182 step 3, exact)",
     );
     let controls_path = state.user_dirs.controls_file();
     if controls_path.exists() {
@@ -1200,5 +1215,5 @@ pub fn play(shared: &Shared) -> Result<(), String> {
         .iter()
         .map(|key| messages::text(key, language).to_string())
         .collect();
-    start_game(&plan.arguments, &plan.environment, texts)
+    start_game(&plan.arguments, &plan.environment, texts, game.id)
 }

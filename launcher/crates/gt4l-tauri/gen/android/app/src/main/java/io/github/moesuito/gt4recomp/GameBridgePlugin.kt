@@ -61,6 +61,8 @@ class GameArgs {
     var arguments: Array<String> = arrayOf()
     var environment: Array<String> = arrayOf()
     var texts: Array<String> = arrayOf()
+    /// TASK-180 test5: `gt4` (v2.00) or `spec2`; the game Activity loads the matching library.
+    var game: String = "gt4"
 }
 
 @InvokeArg
@@ -306,6 +308,7 @@ class GameBridgePlugin(private val activity: Activity) : Plugin(activity) {
             putExtra(GameActivity.EXTRA_ARGUMENTS, args.arguments)
             putExtra(GameActivity.EXTRA_ENVIRONMENT, args.environment)
             putExtra(GameActivity.EXTRA_TEXTS, args.texts)
+            putExtra(GameActivity.EXTRA_GAME, args.game)
             // TASK-180 test3: the game is another screen of this app, in this task and without an open animation.
             addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION)
         }

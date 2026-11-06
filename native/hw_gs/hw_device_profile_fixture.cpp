@@ -145,6 +145,60 @@ int main() {
     check(profile_line(profile).find("types none") != std::string::npos, "no types says so");
   }
 
+  check(line.find("device-local host-visible memory no") != std::string::npos,
+        "a discrete profile has no device-local host-visible type");
+
+  // ---- TASK-182 step 3: the K rule's device default (row 2 of STUDY-ASYNC-READBACK 9.1) ----
+  {
+    DeviceProfile gpu;  // a discrete desktop GPU: K stays 0 until its own A/B
+    gpu.device_class = DeviceClass::discrete;
+    gpu.device_type = kDeviceTypeDiscrete;
+    check(!k_rule_default_on(gpu) && k_rule_default_batches(gpu) == 0, "discrete: the rule stays off");
+    check(std::string(k_rule_default_reason(gpu)) == "discrete GPU", "discrete: the reason");
+
+    DeviceProfile phone;  // Adreno, Mali, PowerVR, Apple, Xclipse: tile-based
+    phone.device_class = DeviceClass::tiler_or_unknown;
+    phone.device_type = kDeviceTypeIntegrated;
+    phone.vendor_id = kVendorQualcomm;
+    check(k_rule_default_on(phone) && k_rule_default_batches(phone) == kRuleDefaultBatches, "a tiler: K = 8");
+    check(std::string(k_rule_default_reason(phone)) == "tile-based or unknown GPU", "a tiler: the reason");
+
+    DeviceProfile software;  // lavapipe and the like: no better data than the other tilers
+    software.device_class = DeviceClass::tiler_or_unknown;
+    software.device_type = kDeviceTypeCpu;
+    check(k_rule_default_on(software), "a software device: K = 8");
+
+    DeviceProfile apu;  // an integrated GPU sharing system memory: unified
+    apu.device_class = DeviceClass::integrated;
+    apu.device_type = kDeviceTypeIntegrated;
+    apu.unified_memory = true;
+    check(k_rule_default_on(apu) && k_rule_default_batches(apu) == kRuleDefaultBatches, "an APU with unified memory: K = 8");
+    check(std::string(k_rule_default_reason(apu)) == "unified memory", "an APU: the reason");
+
+    DeviceProfile integratedOwn;  // integrated by type, but its memory is its own (not the case today, kept honest)
+    integratedOwn.device_class = DeviceClass::integrated;
+    integratedOwn.device_type = kDeviceTypeIntegrated;
+    integratedOwn.unified_memory = false;
+    integratedOwn.integrated_defaults = false;
+    check(!k_rule_default_on(integratedOwn), "an integrated GPU without unified memory keeps K = 0");
+    check(std::string(k_rule_default_reason(integratedOwn)) == "integrated GPU with its own memory", "its reason");
+    integratedOwn.integrated_defaults = true;  // today's integrated default rule (device type) still counts
+    check(k_rule_default_on(integratedOwn), "the integrated device-type default is enough");
+
+    DeviceProfile rebar;  // a discrete GPU with a host-visible device-local type (resizable BAR): the class wins
+    rebar.device_class = DeviceClass::discrete;
+    rebar.device_type = kDeviceTypeDiscrete;
+    rebar.unified_memory = true;
+    check(!k_rule_default_on(rebar), "a discrete GPU stays off even if it reports unified memory");
+  }
+  {
+    DeviceProfile apuLine = profile;
+    apuLine.unified_memory = true;
+    const std::string text = profile_line(apuLine);
+    check(text.find("device-local host-visible memory yes") != std::string::npos,
+          "the line names the device-local host-visible type");
+  }
+
   // ---- Rings: today's sizes wherever they fit in a quarter of the heap's budget ----
   check(today(plan_core2_rings(request(16, 16 * GiB, 15 * GiB)), 16), "a desktop keeps today's 736 MiB");
   check(plan_core2_rings(request(16, 16 * GiB, 15 * GiB)).total() == 736 * MiB, "736 MiB on a discrete GPU");

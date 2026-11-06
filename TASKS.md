@@ -3448,6 +3448,35 @@ fix. Scope in order, easiest and biggest gain first:
   pre-rotation, `GT4_HW_PRESENT_DIRECT`) and Spec II on Android (`libgt4spec2.so`: the hooked unit set, both libraries in
   the APK, the Activity picking by game, the launcher's install and Play path).
 
+**APK test5 (owner, 2026-11-06):** the CoreGS 2.0 optimisation work is paused for now (owner, 2026-11-06); this build
+keeps the exact TASK-182 savings and adds the Performance Mode split, and Spec II ships on Android.
+- **TASK-182 step 3 merged** (`task/182-barrier-scope` at 54d2a0f4): the newest-fence readback wait
+  (`GT4_CORE2_WAIT_NEWEST_FENCE`, on), the bounded spin (`GT4_HW_READBACK_SPIN`, off) and the K rule's device default
+  (8 batches after a waited readback on a tile-based or unified-memory GPU; 0 on a discrete one), logged on the
+  `[core2] submissions` line. Android also gets `GT4_CORE2_SUBMIT_EVERY=128` (measured on the S23 showroom bench:
+  +11.6% VBlanks/s, 32% fewer render passes; only submission boundaries change). The K default is clamped to it.
+- **Performance Mode is replaced by independent effect toggles** (owner, 2026-11-05), on by default, on the Graphics page
+  for both renderers:
+  - *Sun glare and light flares*: the 64 x 8 flare visibility table is answered as zeros, so neither is drawn and the
+    processor never waits for it. One toggle: one table feeds both (IN-441), so they cannot be split.
+  - *Road sheen*: the full-screen sheen pass and its alpha-lane fills are left out (IN-501/502). CoreGS 2.0 only (its
+    classifier is core 2's); the GSdx path streams raw GIF and has none, so the row is not offered there.
+  - Not player toggles: delayed downloads (it only made the hidden flare read cheap; the zeros answer supersedes it) and
+    small effect targets at 1x (a resolution choice, not an effect on/off).
+  - Switches: `GT4_CORE2_PERF_FLARES=1`, `GT4_CORE2_PERF_ROAD_SHEEN=1` turn one effect off; `GT4_CORE2_PERFORMANCE=1`
+    still means all off; the older names win as A/B. The GSdx path gets `GT4_GS_HIDE_FLARES` from the launcher, and the
+    game-side stream client also accepts the new name; the gt4-gs fast download mode is written only when the flares are
+    off. Settings in `[gs]` (`effect_flares`, `effect_road_sheen`), schema 10 migrates a stored `no-readbacks` to every
+    effect off.
+  - Fixtures: `hw_core2_effect_toggles`, the stream client fixture (new name → zeros), launcher rows/env/migration and the
+    Python table twin.
+- **Spec II on Android:** the hooked Spec II unit set was regenerated (`scripts/camera360_units.py spec2`), `libgt4spec2.so`
+  builds for arm64, both libraries are packaged, and the game Activity loads the library of the chosen game (extra
+  `GAME`); the launcher's Play uses the game's own ELF and `GT4_BENCH_GAME=spec2` is no longer refused. The boot test in
+  the emulator could not run: the only Spec II images on this PC are PTBR builds whose ISO hash does not match the pin
+  (`docs/inputs/spec2-iso.json`).
+- **Unified-memory phase 2 is cancelled for this build** (owner pause).
+
 **One app (owner, same day; APK rebuilt as `1.3.0-android-test3`):** the game runs in the launcher's own task
 (`singleTop`, no task affinity, black window theme, no activity animation), one card in recents; the app icon enters
 through a windowless `LaunchGateActivity` that starts the running game or the launcher and finishes, because a

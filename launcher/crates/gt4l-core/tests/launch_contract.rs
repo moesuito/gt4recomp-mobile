@@ -61,7 +61,39 @@ fn default_settings_send_the_main_profile_variables_plus_the_launcher_defaults()
     // TASK-161: the full trigger range is always stated, on by default since rc14 (owner, 2026-11-04; the game reads it
     // for both of its sides).
     assert_eq!(environment["GT4_TRIGGER_FULL_RANGE"], "1");
-    assert_eq!(environment.len(), 11, "the GSdx variables: renderer, process pin, config, PS2_GS and the common holds");
+    // TASK-180 test5: the flare effect toggle rides as the stream client's zero answer (TASK-117); every effect is on.
+    assert_eq!(environment["GT4_GS_HIDE_FLARES"], "0", "the flares are drawn by default");
+    assert_eq!(
+        environment.len(),
+        12,
+        "the GSdx variables: renderer, process pin, config, PS2_GS, the flare effect and the common holds"
+    );
+}
+
+/// TASK-180 test5: turning an effect off is what sends the renderer's switch, and the road sheen is CoreGS-only.
+#[test]
+fn the_effect_toggles_drive_the_renderer_switches() {
+    let mut settings = Settings::default();
+    assert_eq!(env_map(&game_environment(&settings))["GT4_GS_HIDE_FLARES"], "0");
+    settings.set_gs("effect_flares", "false").unwrap();
+    assert_eq!(
+        env_map(&game_environment(&settings))["GT4_GS_HIDE_FLARES"],
+        "1",
+        "the flares are off"
+    );
+
+    let display = None;
+    let textures = TextureLocation::default_folder(Path::new("C:/GT4Recomp/user/Textures"));
+    let core = |settings: &Settings| env_map(&launch::coregs20_environment(settings, display, false, &textures));
+    let all_on = core(&Settings::default());
+    assert_eq!(all_on["GT4_CORE2_PERF_FLARES"], "0");
+    assert_eq!(all_on["GT4_CORE2_PERF_ROAD_SHEEN"], "0");
+    let mut one_off = Settings::default();
+    one_off.set_gs("effect_road_sheen", "false").unwrap();
+    let road = core(&one_off);
+    assert_eq!(road["GT4_CORE2_PERF_ROAD_SHEEN"], "1", "the road sheen is off");
+    assert_eq!(road["GT4_CORE2_PERF_FLARES"], "0", "the flares stay on");
+    assert!(!road.contains_key("GT4_CORE2_PERFORMANCE"), "the old bundle is never sent");
 }
 
 #[test]
