@@ -809,6 +809,11 @@ int gt4gs_read_fifo(void *data, uint32_t qwords) {
   return s_source->PushReadFifo(static_cast<std::uint8_t *>(data), qwords) ? 1 : 0;
 }
 
+uint64_t gt4gs_read_fifo_nowait(uint32_t qwords) {
+  if (s_source == nullptr) return 0;
+  return s_source->PushReadFifoNoWait(qwords);
+}
+
 void gt4gs_reset(int kind) {
   if (s_source == nullptr) return;
   s_source->PushReset(static_cast<std::uint32_t>(kind), kind == 2 ? 0xeu : 0u);

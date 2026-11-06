@@ -4,6 +4,8 @@
 // Nothing here knows ARMSX2 or PCSX2: only the flat C ABI of android/armsx2gs/gt4gs_api.h. See armsx2_gs_sink.hpp.
 
 #include "armsx2_gs_sink.hpp"
+#include "armsx2_flare.hpp"
+#include "gs_stream_client.hpp"
 
 #include <dlfcn.h>
 
@@ -32,6 +34,7 @@ using GifFn = void (*)(int path, const void *data, std::uint32_t bytes);
 using PrivFn = void (*)(std::uint32_t address, std::uint64_t value);
 using VsyncFn = void (*)(int odd_field);
 using ReadFifoFn = int (*)(void *data, std::uint32_t qwords);
+using ReadFifoNowaitFn = std::uint64_t (*)(std::uint32_t qwords);
 using ResetFn = void (*)(int kind);
 using AspectFn = void (*)(int fill, std::uint32_t ratio_millionths);
 using TextFn = const char *(*)();
@@ -61,6 +64,7 @@ struct Library {
   PrivFn privileged = nullptr;
   VsyncFn vsync = nullptr;
   ReadFifoFn read_fifo = nullptr;
+  ReadFifoNowaitFn read_fifo_nowait = nullptr;
   ResetFn reset = nullptr;
   AspectFn display_aspect = nullptr;
   VoidVoid finish = nullptr;
@@ -92,6 +96,7 @@ Library &library() {
     out.privileged = reinterpret_cast<PrivFn>(resolve("gt4gs_privileged"));
     out.vsync = reinterpret_cast<VsyncFn>(resolve("gt4gs_vsync"));
     out.read_fifo = reinterpret_cast<ReadFifoFn>(resolve("gt4gs_read_fifo"));
+    out.read_fifo_nowait = reinterpret_cast<ReadFifoNowaitFn>(resolve("gt4gs_read_fifo_nowait"));
     out.reset = reinterpret_cast<ResetFn>(resolve("gt4gs_reset"));
     out.display_aspect = reinterpret_cast<AspectFn>(resolve("gt4gs_display_aspect"));
     out.finish = reinterpret_cast<VoidVoid>(resolve("gt4gs_finish"));
@@ -201,6 +206,18 @@ void privileged(std::uint32_t address, std::uint64_t value) {
 void read_fifo(std::uint8_t *data, std::uint32_t qwords) {
   Library &lib = library();
   if (lib.usable && data != nullptr) {
+    // TASK-186 round 8: with "Sun glare and light flares" off, the 64x8 flare table is answered as zeros at once and
+    // posted to the library without waiting (the late reply is discarded). Every other read keeps the blocking drain.
+    static std::uint64_t flare_zero_answers = 0;
+    if (armsx2::answer_flare_table_with_zeros(data, qwords, hide_flares_requested(), lib.read_fifo_nowait)) {
+      const std::uint64_t answered = ++flare_zero_answers;
+      if (answered == 1)
+        std::fprintf(stderr, "[gs] flare table answered as zeros\n");
+      else if ((answered % 600) == 0)
+        std::fprintf(stderr, "[gs] flare table answered as zeros: %llu\n",
+                     static_cast<unsigned long long>(answered));
+      return;
+    }
     lib.read_fifo(data, qwords);
     return;
   }

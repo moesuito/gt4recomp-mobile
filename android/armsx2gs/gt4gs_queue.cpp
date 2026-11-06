@@ -127,6 +127,20 @@ bool QueueSource::PushReadFifo(std::uint8_t *data, std::uint32_t qwords) {
   return true;
 }
 
+std::uint64_t QueueSource::PushReadFifoNoWait(std::uint32_t qwords) {
+  if (qwords == 0) return 0;
+  std::uint64_t request = 0;
+  {
+    std::lock_guard lock(mutex_);
+    request = ++pending_readback_;
+  }
+  ReadFifoPayload read{};
+  read.qwords = qwords;
+  read.request_id = request;
+  if (!Push(static_cast<std::uint16_t>(RecordType::read_fifo), 0, &read, sizeof(read))) return 0;
+  return request;
+}
+
 void QueueSource::PushReset(std::uint32_t kind, std::uint32_t path_mask) {
   ResetPayload reset{};
   reset.kind = kind;

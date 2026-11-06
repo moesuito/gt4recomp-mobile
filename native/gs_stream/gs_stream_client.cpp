@@ -1467,6 +1467,15 @@ void post_read_fifo_nowait(std::uint32_t qwords) {
   if (Client *c = client()) c->post_queued_readback(qwords);
 }
 
+// TASK-186 round 8: the flare switch, for the in-process ARMSX2 sink. Unset means the flares are drawn (off switch).
+// The process path has its own helper inside GT4_GS_STREAM_PROCESS; this one is compiled for the in-process library too.
+bool hide_flares_requested() {
+  const char *value = std::getenv(kHideFlaresSwitch);
+  if (!value || !*value) value = std::getenv("GT4_CORE2_PERF_FLARES");
+  if (!value || !*value) return false;
+  return std::strcmp(value, "1") == 0;
+}
+
 void on_vsync(bool odd_field) {
   // TASK-084 step 3 holds the VSYNC until the frame's VU1 output is in stream order; this applies to the in-process
   // hw sink as well (TASK-027), whose VSYNC flushes and presents the frame.

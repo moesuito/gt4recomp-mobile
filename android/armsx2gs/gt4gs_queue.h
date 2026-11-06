@@ -78,6 +78,8 @@ class QueueSource final : public Source {
   void PushPrivileged(std::uint32_t address, std::uint64_t value);
   void PushVsync(bool odd_field);  // waits for frames in flight, as the Windows transport does
   bool PushReadFifo(std::uint8_t *data, std::uint32_t qwords);  // blocks for the reply; false on timeout
+  // Posts the read and returns its request id without waiting; 0 when it was not queued (round 8, flare table).
+  std::uint64_t PushReadFifoNoWait(std::uint32_t qwords);
   void PushReset(std::uint32_t kind, std::uint32_t path_mask);
   void PushControl(const gs_stream::ControlPayload &control);
   void PushShutdown();

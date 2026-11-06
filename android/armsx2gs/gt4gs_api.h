@@ -75,6 +75,9 @@ GT4GS_PUBLIC void gt4gs_privileged(uint32_t address, uint64_t value);
 GT4GS_PUBLIC void gt4gs_vsync(int odd_field);
 // Local-to-host FIFO read of `qwords` quadwords: fills `data` (always) and returns 1 when the GS answered.
 GT4GS_PUBLIC int gt4gs_read_fifo(void *data, uint32_t qwords);
+// The same read posted without waiting for the reply (round 8): returns the request id, 0 when not posted. The reply is
+// still produced and discarded; used by the flare-table zero answer.
+GT4GS_PUBLIC uint64_t gt4gs_read_fifo_nowait(uint32_t qwords);
 // kind 1: GS hard reset (local memory cleared); kind 2: GIF path parsers back to "waiting for a tag".
 GT4GS_PUBLIC void gt4gs_reset(int kind);
 // Protocol 1.3 display aspect: fill = 1 stretches the picture over the whole window, 0 keeps the game aspect

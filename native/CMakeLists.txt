@@ -415,6 +415,11 @@ target_link_libraries(license_guard_fixture PRIVATE gt4_license_guard)
 target_compile_options(license_guard_fixture PRIVATE /W4)
 # Sane data kept, insane count with CRC fail guarded, CRC pass kept.
 add_test(NAME native_license_guard COMMAND $<TARGET_FILE:license_guard_fixture>)
+# TASK-186 round 8: the ARMSX2 sink's flare-table zero answer (hidden -> zeros and a no-wait post; shown/other -> real).
+add_executable(armsx2_flare_fixture gs_stream/armsx2_flare_fixture.cpp)
+target_compile_options(armsx2_flare_fixture PRIVATE /W4)
+target_include_directories(armsx2_flare_fixture PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+add_test(NAME native_armsx2_flare COMMAND $<TARGET_FILE:armsx2_flare_fixture>)
 # TASK-100 S3: the per-target guest-hook table (v2.00 values and the disabled Spec II default).
 # TASK-097: the standalone start rules (paths from the executable folder, receipt check, defaults, precedence, command line).
 add_executable(standalone_fixture standalone_fixture.cpp standalone.cpp)
