@@ -61,7 +61,7 @@ class VirtualPadView(context: Context) : View(context) {
 
     private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = dp(2f)
+        strokeWidth = dp(1.6f)
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
@@ -243,21 +243,21 @@ class VirtualPadView(context: Context) : View(context) {
         val radius = min(halfWidth, halfHeight)
         if (radius <= 0f) return
         fill.color = Color.WHITE
-        fill.alpha = (alpha * 0.12f).toInt()
+        fill.alpha = (alpha * 0.06f).toInt()
         canvas.drawCircle(centreX, centreY, radius, fill)
         outline.color = Color.WHITE
-        outline.alpha = alpha
+        outline.alpha = (alpha * 0.62f).toInt()
         canvas.drawCircle(centreX, centreY, radius, outline)
         // The knob follows the thumb inside the circle and sits at the centre otherwise.
         val dx = held?.dx ?: 0.0f
         val dy = held?.dy ?: 0.0f
         val knobX = centreX + dx * radius * 0.55f
         val knobY = centreY + dy * radius * 0.55f
-        fill.alpha = (alpha * 0.35f).toInt()
+        fill.alpha = (alpha * 0.22f).toInt()
         canvas.drawCircle(knobX, knobY, radius * 0.42f, fill)
-        outline.alpha = alpha
+        outline.alpha = (alpha * 0.62f).toInt()
         canvas.drawCircle(knobX, knobY, radius * 0.42f, outline)
-        fill.alpha = (alpha * 0.6f).toInt()
+        fill.alpha = (alpha * 0.38f).toInt()
         canvas.drawCircle(centreX, centreY, radius * 0.05f, fill)
     }
 
@@ -288,18 +288,18 @@ class VirtualPadView(context: Context) : View(context) {
         path.reset()
         for (arm in arms) path.addRoundRect(arm, thicknessX * 0.3f, thicknessY * 0.3f, Path.Direction.CW)
         fill.color = Color.WHITE
-        fill.alpha = (alpha * 0.12f).toInt()
+        fill.alpha = (alpha * 0.06f).toInt()
         canvas.drawPath(path, fill)
         for (index in arms.indices) {
             if (!pressedArms[index]) continue
-            fill.alpha = (alpha * 0.45f).toInt()
+            fill.alpha = (alpha * 0.28f).toInt()
             canvas.drawRoundRect(arms[index], thicknessX * 0.3f, thicknessY * 0.3f, fill)
         }
         outline.color = Color.WHITE
-        outline.alpha = alpha
+        outline.alpha = (alpha * 0.62f).toInt()
         canvas.drawPath(path, outline)
         // The centre square, as on a DualShock.
-        fill.alpha = (alpha * 0.3f).toInt()
+        fill.alpha = (alpha * 0.18f).toInt()
         canvas.drawRect(centreX - thicknessX * 0.3f, centreY - thicknessY * 0.3f, centreX + thicknessX * 0.3f,
             centreY + thicknessY * 0.3f, fill)
     }
@@ -320,31 +320,31 @@ class VirtualPadView(context: Context) : View(context) {
         if (face) {
             if (radius <= 0f) return
             fill.color = Color.WHITE
-            fill.alpha = (alpha * if (pressed) 0.42f else 0.10f).toInt()
+            fill.alpha = (alpha * if (pressed) 0.24f else 0.06f).toInt()
             canvas.drawCircle(centreX, centreY, radius, fill)
             outline.color = Color.WHITE
-            outline.alpha = if (pressed) 255 else alpha
-            outline.strokeWidth = dp(if (pressed) 3.4f else 2f)
+            outline.alpha = if (pressed) (alpha * 0.9f).toInt() else (alpha * 0.62f).toInt()
+            outline.strokeWidth = dp(if (pressed) 2.4f else 1.6f)
             canvas.drawCircle(centreX, centreY, radius, outline)
-            drawSymbol(canvas, element.bind, centreX, centreY, radius, if (pressed) 255 else alpha)
-            outline.strokeWidth = dp(2f)
+            drawSymbol(canvas, element.bind, centreX, centreY, radius, (alpha * if (pressed) 0.9f else 0.62f).toInt())
+            outline.strokeWidth = dp(1.6f)
             return
         }
         roundRect.set(centreX - halfWidth, centreY - halfHeight, centreX + halfWidth, centreY + halfHeight)
         val corner = min(halfWidth, halfHeight) * 0.35f
         fill.color = Color.WHITE
-        fill.alpha = (alpha * if (pressed) 0.42f else 0.10f).toInt()
+        fill.alpha = (alpha * if (pressed) 0.24f else 0.06f).toInt()
         canvas.drawRoundRect(roundRect, corner, corner, fill)
         outline.color = Color.WHITE
-        outline.alpha = if (pressed) 255 else alpha
-        outline.strokeWidth = dp(if (pressed) 3.4f else 2f)
+        outline.alpha = if (pressed) (alpha * 0.9f).toInt() else (alpha * 0.62f).toInt()
+        outline.strokeWidth = dp(if (pressed) 2.4f else 1.6f)
         canvas.drawRoundRect(roundRect, corner, corner, outline)
         val text = buttonLabel(element.bind)
         if (text.isEmpty()) return
         label.color = Color.WHITE
-        label.alpha = if (pressed) 255 else alpha
+        label.alpha = (alpha * if (pressed) 0.9f else 0.62f).toInt()
         label.textSize = halfHeight * 0.8f
-        outline.strokeWidth = dp(2f)
+        outline.strokeWidth = dp(1.6f)
         val available = halfWidth * 1.7f
         val measured = label.measureText(text)
         if (measured > available && measured > 0f) label.textSize *= available / measured
@@ -356,8 +356,8 @@ class VirtualPadView(context: Context) : View(context) {
     /** The PlayStation symbols, drawn as outlines so every phone shows the same shape (no font dependency). */
     private fun drawSymbol(canvas: Canvas, bind: String, centreX: Float, centreY: Float, radius: Float, alpha: Int) {
         outline.color = Color.WHITE
-        outline.alpha = alpha
-        outline.strokeWidth = dp(2.2f)
+        outline.alpha = (alpha * 0.62f).toInt()
+        outline.strokeWidth = dp(1.8f)
         val reach = radius * 0.44f
         path.reset()
         when (bind) {
@@ -383,7 +383,7 @@ class VirtualPadView(context: Context) : View(context) {
                 canvas.drawPath(path, outline)
             }
         }
-        outline.strokeWidth = dp(2f)
+        outline.strokeWidth = dp(1.6f)
     }
 
     /** The label of a named button; the four face buttons draw their symbol instead. */

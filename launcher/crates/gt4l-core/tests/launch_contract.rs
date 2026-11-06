@@ -417,19 +417,19 @@ fn setup_tries_coregs20_only_on_a_new_install_with_no_choice_and_no_gsdx() {
 fn android_never_installs_gsdx_at_the_end_of_setup() {
     // TASK-180 (owner, 2026-11-06): the Android launcher downloaded the PC GSdx (gt4-gs.exe) at the end of setup, because
     // setup tried CoreGS 2.0 on "this PC", could not run a Windows program there, and fell back to GSdx. A platform without
-    // GSdx has nothing to try and nothing to install: CoreGS 2.0 is inside the game.
+    // the PC GSdx has nothing to try and nothing to install: it keeps its own renderer (GSdx (ARMSX2) by default).
     use gt4l_core::platform::Platform;
     use launch::{gsdx_installs_here, setup_renderer, SetupRenderer};
     let settings = Settings::default();
     assert!(!gsdx_installs_here(Platform::Android), "no GSdx download or install starts on Android");
     assert!(gsdx_installs_here(Platform::Windows), "Windows is unchanged");
     for (first_game, gsdx_missing) in [(true, true), (true, false), (false, true), (false, false)] {
-        assert_eq!(setup_renderer(Platform::Android, &settings, first_game, gsdx_missing), SetupRenderer::Coregs20,
+        assert_eq!(setup_renderer(Platform::Android, &settings, first_game, gsdx_missing), SetupRenderer::NothingToInstall,
             "first_game {first_game}, gsdx_missing {gsdx_missing}");
     }
     let mut chose_gsdx = Settings::default();
     chose_gsdx.set_by_user("renderer", "pcsx2").unwrap();
-    assert_eq!(setup_renderer(Platform::Android, &chose_gsdx, true, true), SetupRenderer::Coregs20, "a stored PC choice installs nothing here");
+    assert_eq!(setup_renderer(Platform::Android, &chose_gsdx, true, true), SetupRenderer::NothingToInstall, "a stored PC choice installs nothing here");
     assert!(launch::GSDX_WINDOWS_ONLY.contains("Android"), "the refusal names the platform");
 }
 

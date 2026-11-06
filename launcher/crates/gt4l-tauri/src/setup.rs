@@ -500,6 +500,16 @@ fn prepare_renderer(
     let plan = launch::setup_renderer(Platform::current(), &lock(shared).config.settings, first_game, gsdx_missing);
     let mut choice = String::new();
     match plan {
+        SetupRenderer::NothingToInstall => {
+            // Android (A30, round 8): the PC GSdx is never downloaded here. The phone keeps its own renderer: GSdx
+            // (ARMSX2) by default, or CoreGS 2.0 when the player chose it.
+            let mut state = lock(shared);
+            let stored = state.config.settings.get("renderer").to_string();
+            let chosen = if stored == settings::CORE_GS_20 { settings::CORE_GS_20 } else { settings::ARMSX2_GS };
+            state.setup_run.renderer_choice = chosen.into();
+            state::log(dirs, "setup: the phone's own renderer is used; the PC GSdx is a Windows program and is not downloaded");
+            return String::new();
+        }
         SetupRenderer::Coregs20 => {
             lock(shared).setup_run.renderer_choice = settings::CORE_GS_20.into();
             // TASK-180 (owner, 2026-11-06): on Android this is the whole renderer story, there is nothing to look for and no

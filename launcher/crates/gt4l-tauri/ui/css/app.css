@@ -1412,8 +1412,8 @@ body.input-pad .selector:focus .selector-arrow { color: var(--white); }
 }
 .vp-el {
   position: absolute; display: grid; place-items: center; border-radius: 50%; cursor: grab; touch-action: none;
-  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05) 62%, rgba(0, 0, 0, 0.18));
-  border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.03) 62%, rgba(0, 0, 0, 0.14));
+  border: 1px solid rgba(255, 255, 255, 0.22); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
 }
 .vp-el[data-kind="dpad"], .vp-el[data-kind="stick"] { border-radius: 50%; }
 /* A wide button (L1, Start) is a bar, not an ellipse. */
@@ -1425,11 +1425,17 @@ body.input-pad .selector:focus .selector-arrow { color: var(--white); }
   transform: rotate(-22deg); pointer-events: none;
 }
 .vp-art { position: absolute; inset: 9%; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+/* The virtual pad look is shared with the in-game overlay: monochrome, thin and low contrast (owner, 2026-11-06). */
 .vp-art .ds-glyph { width: 100%; height: 100%; }
+.vp-art .g-triangle, .vp-art .g-circle, .vp-art .g-cross, .vp-art .g-square { stroke: rgba(255, 255, 255, 0.62); }
+.vp-art .gl-cap { fill: rgba(255, 255, 255, 0.05); stroke: rgba(255, 255, 255, 0.22); }
+.vp-art .gl-ring { stroke: rgba(255, 255, 255, 0.5); }
+.vp-art .gl-on { fill: rgba(255, 255, 255, 0.55); }
+.vp-art .gl-text { fill: rgba(255, 255, 255, 0.62); }
 .vp-dpad, .vp-stick { width: 100%; height: 100%; }
-.vp-dpad path { fill: rgba(255, 255, 255, 0.24); }
-.vp-stick .ring { fill: rgba(255, 255, 255, 0.10); stroke: rgba(255, 255, 255, 0.38); stroke-width: 3; }
-.vp-stick .knob { fill: rgba(255, 255, 255, 0.34); }
+.vp-dpad path { fill: rgba(255, 255, 255, 0.14); }
+.vp-stick .ring { fill: rgba(255, 255, 255, 0.06); stroke: rgba(255, 255, 255, 0.30); stroke-width: 2; }
+.vp-stick .knob { fill: rgba(255, 255, 255, 0.20); }
 .vp-handle {
   position: absolute; z-index: 2; transform: translate(-50%, -50%); border-radius: 4px; touch-action: none;
   background: #9cc0ff; border: 2px solid #0a0c14; box-shadow: 0 0 12px rgba(44, 107, 237, 0.85); cursor: nwse-resize;

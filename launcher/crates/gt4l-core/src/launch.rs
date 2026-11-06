@@ -170,6 +170,9 @@ pub enum SetupRenderer {
     TryCoregs20,
     /// GSdx stays the renderer: installed now if it is missing or too old.
     Gsdx,
+    /// This platform has no PC GSdx to install (Android): keep its own renderer (GSdx (ARMSX2), or CoreGS 2.0 if the
+    /// player chose it) and do not touch the download path.
+    NothingToInstall,
 }
 
 /// `first_game`: no game was set up before this one. `gsdx_missing`: GSdx is not installed, or is below the minimum.
@@ -179,7 +182,9 @@ pub enum SetupRenderer {
 /// never fall back to a download that cannot run.
 pub fn setup_renderer(platform: Platform, settings: &Settings, first_game: bool, gsdx_missing: bool) -> SetupRenderer {
     if !platform.has_gsdx() {
-        return SetupRenderer::Coregs20;
+        // The phone keeps its own renderer (GSdx (ARMSX2) by default, CoreGS 2.0 if chosen). Setup must neither try
+        // CoreGS 2.0 "on this PC" nor download the PC GSdx; it only reports that there is nothing to install.
+        return SetupRenderer::NothingToInstall;
     }
     if uses_coregs20(settings) {
         SetupRenderer::Coregs20
