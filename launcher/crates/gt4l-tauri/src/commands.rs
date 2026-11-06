@@ -427,6 +427,13 @@ pub struct PlayInputs {
     pub api: String,
 }
 
+/// Stores `game` as the choice the next start shows (owner, 2026-11-06): the Windows Play and the Android Play both call
+/// it; a bench run does not. Kept here, outside `mod android`, so the flow audit can exercise it on every host.
+pub(crate) fn remember_game_played(state: &mut AppState, game: &'static games::Game) {
+    state.config.selected_game = games::after_play(game);
+    state.save_config();
+}
+
 /// The checks of Play before anything starts. `program_dir` is the folder of `GT4Recomp.exe`.
 pub fn prepare_play(shared: &Shared, program_dir: &Path) -> Result<PlayInputs, String> {
     let state = lock(shared);
@@ -628,8 +635,7 @@ pub fn play(app: AppHandle, shared: State<'_, Shared>) -> Result<(), String> {
             let _ = state.config.settings.set("graphics_card", &resolved_card);
         }
         // The game played last is the one the next start shows (owner, 2026-10-23).
-        state.config.selected_game = games::after_play(game);
-        state.save_config();
+        remember_game_played(&mut state, game);
         // save_config writes the stored choice; a run that fell back to Direct3D 11 keeps its own direct-start file.
         state.write_standalone_files(&settings);
         let discord_enabled = state.config.settings.is_on("discord_rich_presence");

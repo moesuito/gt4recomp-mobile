@@ -2089,3 +2089,24 @@ fn a_refused_wheel_file_gets_one_copy_and_the_first_change_replaces_it() {
     assert_eq!(crate::wheel_page::get_wheel_config_of(&shared)["file"]["state"], json!("loaded"));
     let _ = fs::remove_dir_all(root);
 }
+
+/// Round 9 (owner, 2026-11-06): Android's Play now stores the game it started, so the next launch opens on it; a bench run
+/// (GT4_BENCH_GAME) must leave the page and the stored choice alone.
+#[test]
+fn the_home_remembers_the_game_played_and_a_bench_does_not_move_it() {
+    use gt4l_core::games::{GT4, SPEC2};
+    let root = scratch("played-game");
+    let dirs = DataDirs::new(&root.join("data"));
+    let pins = Pins::embedded().expect("embedded pins");
+    let shared = launch(&dirs, &pins);
+    commands::remember_game_played(&mut lock(&shared), &GT4);
+    let second = launch(&dirs, &pins);
+    assert_eq!(screen(&second)["selected_game"], "gt4", "v2.00, the game just played");
+    assert_eq!(lock(&second).config.selected_game.as_deref(), Some("gt4"));
+    commands::remember_game_played(&mut lock(&second), &SPEC2);
+    let third = launch(&dirs, &pins);
+    assert_eq!(screen(&third)["selected_game"], "spec2", "Spec II, the game just played");
+    assert_eq!(lock(&third).config.selected_game.as_deref(), Some("spec2"));
+    // A bench run never calls remember_played: the stored choice and the page stay on Spec II.
+    assert_eq!(screen(&third)["selected_game"], "spec2");
+}

@@ -1007,6 +1007,11 @@ pub fn play(shared: &Shared) -> Result<(), String> {
     // synced. `GT4_BENCH_GAME` picks the game (gt4 or spec2) the bench starts, whatever the home page shows.
     let bench = bench_request(&debug, &data_dirs)?;
     let game = bench.game.unwrap_or(state.selected);
+    // The game played last is the one the next start shows (owner, 2026-11-06), the same rule as the Windows Play.
+    // A bench run picks its game from debug.env and must not move the home page.
+    if bench.game.is_none() {
+        crate::commands::remember_game_played(&mut state, game);
+    }
     let disc = match state.installed_of(game) {
         Installed::Ready { image, .. } => image,
         Installed::NotSetUp => return Err(messages::text("game.set_up_first", language).into()),
