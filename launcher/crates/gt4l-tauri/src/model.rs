@@ -33,7 +33,7 @@ const CORE_GS_20_TABLE_ROWS: &[&str] = &["effect_flares", "texture_load", "fxaa"
 /// under GSdx on Windows; CoreGS 2.0 has neither setting.
 const ARMSX2_GS_TABLE_ROWS: &[&str] = &["blending", "hw_download_mode"];
 /// GS table rows that exist under CoreGS 2.0 only, on every platform (TASK-180 test5: the road sheen's classifier is core 2's).
-const CORE_GS_20_ONLY_TABLE_ROWS: &[&str] = &["effect_road_sheen"];
+const CORE_GS_20_ONLY_TABLE_ROWS: &[&str] = &["effect_road_sheen", "effect_targets"];
 
 pub fn pcsx2_table_rows() -> Vec<&'static gs_table::Row> {
     gs_table::offered().into_iter().filter(|row| !DERIVED_TABLE_IDS.contains(&row.id.as_str())).collect()
@@ -319,7 +319,8 @@ fn settings_table_versioned(
         rows.push(row);
     }
     for row in pcsx2_table_rows() {
-        let coregs_row = CORE_GS_20_TABLE_ROWS.contains(&row.id.as_str());
+        let coregs_only = CORE_GS_20_ONLY_TABLE_ROWS.contains(&row.id.as_str());
+        let coregs_row = CORE_GS_20_TABLE_ROWS.contains(&row.id.as_str()) || coregs_only;
         let armsx2_row = ARMSX2_GS_TABLE_ROWS.contains(&row.id.as_str());
         let gsdx_only = !coregs_row && !armsx2_row;
         // The rows after CAS and the Graphics API are not GSdx's; they stay on a platform without GSdx (below).
@@ -332,7 +333,10 @@ fn settings_table_versioned(
             continue;
         }
         let mut out = gs_row(row, settings);
-        if armsx2_row {
+        if coregs_only {
+            // A CoreGS 2.0-only row (road sheen, small effects): hidden under GSdx on every platform.
+            out["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 });
+        } else if armsx2_row {
             // TASK-186: Blending accuracy and Readbacks belong to whichever GSdx-family renderer the platform has.
             let renderer = if platform == Platform::Android {
                 gt4l_core::settings::ARMSX2_GS
@@ -1062,7 +1066,7 @@ mod table_tests {
                 "{gsdx_row} is a player row under GSdx (ARMSX2)"
             );
         }
-        for present in ["language", "update_channel", "render_scale", "vsync", "frame_rate", "coregs_sharpening", "trigger_full_range", "performance_hud", "armsx2_textures"] {
+        for present in ["language", "update_channel", "render_scale", "vsync", "frame_rate", "coregs_sharpening", "trigger_full_range", "performance_hud", "armsx2_textures", "effect_targets"] {
             assert!(listed.iter().any(|id| id == present), "{present} is an Android row");
         }
     }
@@ -1076,7 +1080,7 @@ mod table_tests {
         armsx2.set("renderer", gt4l_core::settings::ARMSX2_GS).unwrap();
         let table = settings_table_for(Platform::Android, &armsx2, &Controls::default(), &[], &[], false);
         assert_eq!(row(&table, "renderer")["current"], gt4l_core::settings::ARMSX2_GS);
-        for hidden in ["texture_load", "fxaa", "effect_road_sheen"] {
+        for hidden in ["texture_load", "fxaa", "effect_road_sheen", "effect_targets"] {
             assert_eq!(
                 row(&table, hidden)["visible_when"],
                 json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
@@ -1094,7 +1098,7 @@ mod table_tests {
         let mut coregs = Settings::default();
         coregs.set("renderer", gt4l_core::settings::CORE_GS_20).unwrap();
         let table = settings_table_for(Platform::Android, &coregs, &Controls::default(), &[], &[], false);
-        for shown in ["texture_load", "fxaa", "effect_road_sheen"] {
+        for shown in ["texture_load", "fxaa", "effect_road_sheen", "effect_targets"] {
             if row(&table, shown).get("visible_when").is_some() {
                 assert_eq!(
                     row(&table, shown)["visible_when"],
@@ -1106,6 +1110,30 @@ mod table_tests {
         for shared in ["render_scale", "performance_hud", "vsync", "frame_rate"] {
             assert!(row(&table, shared)["visible_when"].is_null(), "{shared} is a row for both renderers");
         }
+    }
+
+    // Round 8 (owner, 2026-11-06): the old Performance Mode's third picture item, the small effect targets, is a CoreGS
+    // 2.0 row on Android too: Full by default, Lower (1x) as the other choice, hidden under GSdx (ARMSX2).
+    #[test]
+    fn the_small_effects_row_is_coregs_only_and_defaults_to_full() {
+        let mut coregs = Settings::default();
+        coregs.set("renderer", gt4l_core::settings::CORE_GS_20).unwrap();
+        let table = settings_table_for(Platform::Android, &coregs, &Controls::default(), &[], &[], false);
+        let targets = row(&table, "effect_targets");
+        assert_eq!(targets["current"], "full", "Full resolution is the default");
+        let values: Vec<&str> = targets["values"].as_array().unwrap().iter().map(|v| v["value"].as_str().unwrap()).collect();
+        assert_eq!(values, ["full", "1x"]);
+        assert_eq!(
+            targets["visible_when"],
+            json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
+            "CoreGS 2.0 only, on Android too"
+        );
+        let windows = settings_table_for(Platform::Windows, &Settings::default(), &Controls::default(), &[], &[], false);
+        assert_eq!(
+            row(&windows, "effect_targets")["visible_when"],
+            json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
+            "the same row on Windows"
+        );
     }
 
     // Owner (2026-11-06): the ARMSX2 GS owns the API choice and the picture options; they follow the renderer and never

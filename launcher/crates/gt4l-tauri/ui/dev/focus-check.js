@@ -352,14 +352,14 @@
       });
     }
     check("GSdx shows its Graphics menus above its switches", menusAbove(gsdx, ["renderer", "render_scale", "graphics_api", "cas_mode"], ["effect_flares", "fxaa"]), gsdx.join("|"));
-    check("GSdx shows its rows and no FSR1", holds(gsdx, both) && holds(gsdx, gsdxOnly) && lacks(gsdx, ["frame_rate", "coregs_sharpening", "effect_road_sheen"]), gsdx.join("|"));
+    check("GSdx shows its rows and no FSR1", holds(gsdx, both) && holds(gsdx, gsdxOnly) && lacks(gsdx, ["frame_rate", "coregs_sharpening", "effect_road_sheen", "effect_targets"]), gsdx.join("|"));
     await GT4.backend.call("set_setting", { id: "renderer", value: "coregs20" });
     await setHash("#/settings/about");
     await setHash("#/settings/graphics");
     await wait(200);
     var coregs = shown();
     check("CoreGS 2.0 shows its Graphics menus above its switches", menusAbove(coregs, ["renderer", "render_scale", "frame_rate", "coregs_sharpening"], ["effect_flares", "fxaa"]), coregs.join("|"));
-    check("CoreGS 2.0 shows FSR1 and no API, CAS or overlay", holds(coregs, both) && holds(coregs, ["frame_rate", "coregs_sharpening", "effect_road_sheen"]) && lacks(coregs, gsdxOnly), coregs.join("|"));
+    check("CoreGS 2.0 shows FSR1 and no API, CAS or overlay", holds(coregs, both) && holds(coregs, ["frame_rate", "coregs_sharpening", "effect_road_sheen", "effect_targets"]) && lacks(coregs, gsdxOnly), coregs.join("|"));
     // TASK-175: the Performance HUD is a three-way choice (Off, FPS only, Full), Off by default, in the Advanced section.
     function hudNode() { return document.querySelector(".selector[data-setting=\"performance_hud\"]"); }
     var hudWords = ["off", "fps", "full"].map(function (value) { return T("choice.performance_hud." + value); });

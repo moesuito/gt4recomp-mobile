@@ -88,12 +88,33 @@ fn the_effect_toggles_drive_the_renderer_switches() {
     let all_on = core(&Settings::default());
     assert_eq!(all_on["GT4_CORE2_PERF_FLARES"], "0");
     assert_eq!(all_on["GT4_CORE2_PERF_ROAD_SHEEN"], "0");
+    assert_eq!(all_on["GT4_CORE2_EFFECTS_1X"], "0", "Full resolution is the default");
     let mut one_off = Settings::default();
     one_off.set_gs("effect_road_sheen", "false").unwrap();
     let road = core(&one_off);
     assert_eq!(road["GT4_CORE2_PERF_ROAD_SHEEN"], "1", "the road sheen is off");
     assert_eq!(road["GT4_CORE2_PERF_FLARES"], "0", "the flares stay on");
+    assert_eq!(road["GT4_CORE2_EFFECTS_1X"], "0", "the effect targets stay full");
     assert!(!road.contains_key("GT4_CORE2_PERFORMANCE"), "the old bundle is never sent");
+
+    // Round 8 (owner, 2026-11-06): the old GT4_CORE2_PERFORMANCE=1 bundle, item by item, against the variables the
+    // launcher sends when every effect is off and the small effects are lowered. The fourth item, the delayed downloads
+    // (IN-439), has no variable: the flare row answers the table as zeros, which removes the read they delayed.
+    let mut bundle = Settings::default();
+    bundle.set_gs("effect_flares", "false").unwrap();
+    bundle.set_gs("effect_road_sheen", "false").unwrap();
+    bundle.set_gs("effect_targets", "1x").unwrap();
+    let all_off = core(&bundle);
+    let side_by_side = [
+        ("flares hidden / flare table zeros", "GT4_CORE2_PERF_FLARES", "1"),
+        ("road sheen skipped", "GT4_CORE2_PERF_ROAD_SHEEN", "1"),
+        ("small effect targets at 1x", "GT4_CORE2_EFFECTS_1X", "1"),
+    ];
+    for (item, variable, value) in side_by_side {
+        assert_eq!(all_off[variable], value, "{item}: {variable}");
+    }
+    assert!(!all_off.contains_key("GT4_CORE2_DELAYED_DOWNLOADS"), "the flare answer removes the read it delayed");
+    assert!(!all_off.contains_key("GT4_CORE2_PERFORMANCE"), "the old bundle itself is never sent");
 }
 
 #[test]

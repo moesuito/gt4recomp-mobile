@@ -160,6 +160,9 @@ fn settings_9_to_10(document: &mut Value) -> Result<(), String> {
         if performance {
             gs.insert("effect_flares".to_string(), Value::from("false"));
             gs.insert("effect_road_sheen".to_string(), Value::from("false"));
+            // TASK-186 round 8: the bundle's third picture item, the small effect targets at 1x (IN-497), so a player who
+            // had Performance Mode gets all of it back; the delayed downloads need no key (the flare row removes the read).
+            gs.insert("effect_targets".to_string(), Value::from("1x"));
             gs.insert("blending".to_string(), Value::from("minimum"));
         }
         gs.remove("performance_mode");
@@ -580,6 +583,7 @@ mod tests {
             // TASK-180 test5 (schema 10): the old Performance Mode was every effect off, which is what its toggles say.
             assert_eq!(document["gs"]["effect_flares"], json!("false"), "{old}");
             assert_eq!(document["gs"]["effect_road_sheen"], json!("false"), "{old}");
+            assert_eq!(document["gs"]["effect_targets"], json!("1x"), "{old}: the bundle's 1x effect targets (round 8)");
             assert!(document["gs"].get("performance_mode").is_none(), "{old}: the key is gone");
             assert!(document["gs"].get("hw_download_mode").is_none(), "{old}");
             assert_eq!(document["gs"]["fxaa"], json!("true"), "other values are kept");
@@ -593,6 +597,7 @@ mod tests {
         assert!(accurate["gs"].get("hw_download_mode").is_none(), "the old key is dropped");
         assert!(accurate["gs"].get("performance_mode").is_none(), "the old key stays gone");
         assert!(accurate["gs"].get("effect_flares").is_none(), "absent means on, the table default");
+        assert!(accurate["gs"].get("effect_targets").is_none(), "absent means Full, the table default");
 
         let mut missing = json!({"schema_version": 5, "gs": {"fxaa": "false"}});
         migrate(&SETTINGS, &mut missing).unwrap();
@@ -608,6 +613,7 @@ mod tests {
         assert_eq!(on["schema_version"], json!(10));
         assert_eq!(on["gs"]["effect_flares"], json!("false"));
         assert_eq!(on["gs"]["effect_road_sheen"], json!("false"));
+        assert_eq!(on["gs"]["effect_targets"], json!("1x"), "TASK-186 round 8: the bundle's 1x effect targets");
         assert_eq!(on["gs"]["blending"], json!("minimum"), "TASK-186: the preset's blending is a row now");
         assert!(on["gs"].get("performance_mode").is_none());
         assert!(on["gs"].get("hw_download_mode").is_none(), "Readbacks stay at the Accurate default");

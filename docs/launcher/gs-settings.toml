@@ -228,6 +228,27 @@ env = "GT4_CORE2_PERF_ROAD_SHEEN"
 notes = "TASK-180 test5 (owner, 2026-11-05): 'brilho no asfalto'. CoreGS 2.0 only: the sheen is identified in the core 2 batch classifier (IN-501: blend state and coverage over the frame) and its alpha-lane fills go with it (IN-502). The GSdx path streams raw GIF to the external GS and has no classifier on the game side, so its row is not offered there (GT4_CORE2_PERF_ROAD_SHEEN=1 / GT4_CORE2_ROAD_SHEEN=0 for CoreGS 2.0)."
 
 [[setting]]
+id = "effect_targets"
+label = "Small effects"
+help = "The resolution of the small effect pictures GT4 draws inside a scaled frame (glow, reflections). Full resolution is exact and is the default. Lower draws them at 1x, the old Performance Mode's choice: faster, and small effects look softer."
+page = "basic"
+order = 10
+control = "dropdown"
+section = ""
+key = ""
+type = "enum"
+default = "full"
+written = "never"
+offered = true
+status = "ok"
+env = "GT4_CORE2_EFFECTS_1X"
+choices = [
+  { name = "full", status = "ok", label = "Full resolution (default)" },
+  { name = "1x", status = "ok", label = "Lower resolution (faster)" },
+]
+notes = "TASK-186 (owner, 2026-11-06): the third item the old Performance Mode changed on CoreGS 2.0 (IN-497), offered as a choice because its exact default is the full resolution and the bundle only turned it down. GT4_CORE2_EFFECTS_1X=1 draws a target whose width is 256 or less at 1x in a scaled picture (GT4_CORE2_EFFECTS_1X=0 keeps every target at the frame's scale). CoreGS 2.0 only: the row is hidden under GSdx. This row is what makes every item of the old bundle reachable: flares off, road sheen off and this one at 1x is GT4_CORE2_PERFORMANCE=1 (the hw_core2_effect_toggles fixture checks it)."
+
+[[setting]]
 id = "blending"
 label = "Blending accuracy"
 help = "How exactly the graphics card combines colours when the game blends two layers. High is exact and is the default. Minimum is faster (the old Performance Mode used it, about 1.5 ms less per frame on the weak laptop) and can make some translucent effects look wrong."

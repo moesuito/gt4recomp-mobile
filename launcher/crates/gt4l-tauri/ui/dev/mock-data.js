@@ -182,6 +182,12 @@
       page: "basic", group: "graphics", control: "toggle", values: null, default: true, current: true },
     { visible_when: { id: "renderer", equals: "coregs20" }, id: "effect_road_sheen", label: "Road sheen", help: "The shine over the road that GT4 draws as a full-screen pass.",
       page: "basic", group: "graphics", control: "toggle", values: null, default: true, current: true },
+    { visible_when: { id: "renderer", equals: "coregs20" }, id: "effect_targets", label: "Small effects", help: "The resolution of the small effect pictures inside a scaled frame.",
+      page: "basic", group: "graphics", control: "dropdown",
+      values: [
+        { value: "full", label: "Full resolution (default)" },
+        { value: "1x", label: "Lower resolution (faster)" }
+      ], default: "full", current: "full" },
     { visible_when: { id: "renderer", equals: "pcsx2" }, id: "blending", label: "Blending accuracy", help: "How exactly the graphics card combines colours when the game blends two layers.",
       page: "basic", group: "graphics", control: "dropdown",
       values: [

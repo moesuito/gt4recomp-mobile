@@ -260,6 +260,13 @@ pub fn coregs20_environment(
     // every effect is drawn as the original game. The road sheen is CoreGS-only (its classifier is core 2's).
     variables.insert("GT4_CORE2_PERF_FLARES", flag(!settings.gs_is_on("effect_flares")));
     variables.insert("GT4_CORE2_PERF_ROAD_SHEEN", flag(!settings.gs_is_on("effect_road_sheen")));
+    // TASK-186 round 8 (owner, 2026-11-06): the old bundle's third picture item (IN-497), the small effect targets at 1x.
+    // Its exact default is the full resolution, so it is a choice and only "1x" turns it down; with this the launcher can
+    // reproduce every item of GT4_CORE2_PERFORMANCE=1 (the delayed downloads are answered by the flare row).
+    variables.insert(
+        "GT4_CORE2_EFFECTS_1X",
+        if settings.gs_value("effect_targets") == "1x" { "1" } else { "0" }.to_string(),
+    );
     // TASK-174: the one-queue presentation path is the game's default on a GPU with one graphics queue; only "off" is passed.
     if !settings.is_on("present_thread") {
         variables.insert("GT4_HW_PRESENT_SHARED_QUEUE", "0".to_string());
