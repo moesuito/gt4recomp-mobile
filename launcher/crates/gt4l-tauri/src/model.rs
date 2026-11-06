@@ -219,9 +219,12 @@ pub fn platform_accepts(platform: Platform, id: &str) -> bool {
         return false;
     }
     if pcsx2_table_rows().iter().any(|row| row.id == id) {
+        // TASK-186 round 7: the ARMSX2 GS is the GSdx family on Android, and it honours the two GSdx rows (Blending
+        // accuracy and Readbacks) with ARMSX2's own keys. They are settable there like on Windows.
         return platform.has_gsdx()
             || CORE_GS_20_TABLE_ROWS.contains(&id)
-            || CORE_GS_20_ONLY_TABLE_ROWS.contains(&id);
+            || CORE_GS_20_ONLY_TABLE_ROWS.contains(&id)
+            || ARMSX2_GS_TABLE_ROWS.contains(&id);
     }
     true
 }
@@ -1201,9 +1204,37 @@ mod table_tests {
             "l2_deadzone",
             "lstick_deadzone",
             "armsx2_textures",
+            "blending",
+            "hw_download_mode",
         ] {
             assert!(platform_accepts(Platform::Android, accepted), "{accepted}");
         }
+    }
+
+    // TASK-186 round 7 (owner's phone): both GSdx rows are settable on Android with ARMSX2, with every value the table
+    // offers; the stored values reach the Android table with the ARMSX2 renderer chosen.
+    #[test]
+    fn android_accepts_every_blending_and_readback_value() {
+        for id in ARMSX2_GS_TABLE_ROWS {
+            assert!(platform_accepts(Platform::Android, id), "{id} is settable on Android");
+            assert!(platform_accepts(Platform::Windows, id), "{id} stays settable on Windows");
+        }
+        let mut settings = Settings::default();
+        for value in ["high", "minimum"] {
+            settings.set_gs("blending", value).unwrap_or_else(|error| panic!("blending={value}: {error}"));
+            assert_eq!(settings.gs_overrides().get("blending").map(String::as_str), Some(value));
+        }
+        for value in ["accurate", "enabled-force-full", "no-readbacks", "unsynchronized", "disabled"] {
+            settings.set_gs("hw_download_mode", value).unwrap_or_else(|error| panic!("readbacks={value}: {error}"));
+            assert_eq!(settings.gs_overrides().get("hw_download_mode").map(String::as_str), Some(value));
+        }
+        let mut armsx2 = Settings::default();
+        armsx2.set("renderer", gt4l_core::settings::ARMSX2_GS).unwrap();
+        armsx2.set_gs("blending", "minimum").unwrap();
+        armsx2.set_gs("hw_download_mode", "unsynchronized").unwrap();
+        let table = settings_table_for(Platform::Android, &armsx2, &Controls::default(), &[], &[], false);
+        assert_eq!(row(&table, "blending")["current"], "minimum");
+        assert_eq!(row(&table, "hw_download_mode")["current"], "unsynchronized");
     }
 
     fn ids(table: &Value) -> Vec<String> {
