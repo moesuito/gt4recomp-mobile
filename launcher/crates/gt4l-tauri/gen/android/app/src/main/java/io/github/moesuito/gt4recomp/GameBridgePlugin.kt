@@ -177,6 +177,17 @@ class GameBridgePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun startGame(invoke: Invoke) {
         val args = invoke.parseArgs(GameArgs::class.java)
+        // PRIVATE test build: the ARMSX2 GS reads GameIndex.yaml and the OpenGL ES shader sources from its own resources
+        // folder under the app's external files folder. They ship as APK assets (staged by android/stage-armsx2gs.cmd)
+        // and are copied out here, before the game process starts; the copy is cheap and idempotent, so it runs every Play.
+        try {
+            val external = activity.getExternalFilesDir(null)
+            if (external != null) {
+                copyAssetTree("armsx2gs/resources", File(external, "armsx2gs/resources"))
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("GT4Recomp-launcher", "ARMSX2 GS resources not extracted: ${error.message}")
+        }
         val intent = Intent(activity, GameActivity::class.java).apply {
             putExtra(GameActivity.EXTRA_ARGUMENTS, args.arguments)
             putExtra(GameActivity.EXTRA_ENVIRONMENT, args.environment)
@@ -193,6 +204,21 @@ class GameBridgePlugin(private val activity: Activity) : Plugin(activity) {
                 invoke.reject(error.message ?: error.toString())
             }
         }
+    }
+
+    /// Copies one asset subtree out of the APK, creating folders as needed. A missing asset is skipped silently (a build
+    /// without the private ARMSX2 GS has none).
+    private fun copyAssetTree(assetPath: String, target: File) {
+        val children = activity.assets.list(assetPath) ?: return
+        if (children.isEmpty()) {
+            target.parentFile?.mkdirs()
+            activity.assets.open(assetPath).use { input ->
+                FileOutputStream(target).use { output -> input.copyTo(output) }
+            }
+            return
+        }
+        target.mkdirs()
+        for (child in children) copyAssetTree("$assetPath/$child", File(target, child))
     }
 
     /// TASK-180 test3: no activity transition. `overridePendingTransition` is deprecated from API 34 but still applies;

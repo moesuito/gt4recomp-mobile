@@ -1026,7 +1026,47 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             screen().map(|(_, hertz)| format!("{hertz} Hz")).unwrap_or_else(|| "refresh unknown".to_string()),
         ),
     );
+    // PRIVATE test build: the ARMSX2 GS in the game process, beside CoreGS 2.0. The launch plan is the CoreGS one
+    // (same arguments, card and paths); the renderer variables and the settings files are replaced, and the CoreGS-only
+    // defaults are left out (the library reads none of them).
+    let armsx2 = settings.get("renderer") == gt4l_core::settings::ARMSX2_GS;
     let mut plan = launch::plan_coregs20_launch(&inputs, &settings, display.as_ref(), false, &textures, &[]);
+    if armsx2 {
+        plan.environment.retain(|(name, _)| !name.starts_with("GT4_HW_") && !name.starts_with("GT4_CORE2_"));
+        if let Some(external) = EXTERNAL_DIR.get() {
+            let paths = launch::armsx2_paths(external);
+            std::fs::create_dir_all(&paths.root).map_err(|error| format!("ARMSX2 GS folder: {error}"))?;
+            std::fs::create_dir_all(&paths.resources).map_err(|error| format!("ARMSX2 GS resources: {error}"))?;
+            let text = launch::armsx2_config_text(&settings, &paths, &textures.folder)?;
+            if let Err(error) = gt4l_core::gs_table::write_ini_atomic(&paths.config, &text) {
+                state::log_warn(&data_dirs, &format!("ARMSX2 GS settings: {error}"));
+            }
+            if !paths.overrides.exists() {
+                let example = "; GT4Recomp private test build: extra GS lines for the ARMSX2 GS.
+; Every [EmuCore/GS] line here is applied on top of armsx2-gs.ini, so a line you add wins.
+; Example: UserHacks = true
+";
+                let _ = std::fs::write(&paths.overrides, example);
+            }
+            state::log(
+                &data_dirs,
+                &format!(
+                    "graphics: renderer ARMSX2 GS (in process), scale {}, settings {}, extra {}",
+                    settings.get("armsx2_scale"),
+                    paths.config.display(),
+                    paths.overrides.display()
+                ),
+            );
+            plan.environment.retain(|(name, _)| name != "GT4_RENDERER");
+            plan.environment.push(("GT4_RENDERER".into(), "armsx2".into()));
+            plan.environment.push(("GT4_ARMSX2_GS_DIR".into(), paths.root.display().to_string()));
+            plan.environment.push(("GT4_ARMSX2_GS_CONFIG".into(), paths.config.display().to_string()));
+            plan.environment.push(("GT4_ARMSX2_GS_OVERRIDES".into(), paths.overrides.display().to_string()));
+            plan.environment.push(("GT4_ARMSX2_GS_SCALE".into(), settings.get("armsx2_scale").to_string()));
+        } else {
+            state::log_error(&data_dirs, "graphics: the app's external files folder is unknown; ARMSX2 GS cannot start");
+        }
+    }
     // TASK-180 test4: the exact TASK-182 deinterlace savings are the Android default. A deinterlaced frame writes its
     // display merge straight into that field's history image (two full-display copies and two full barriers fewer per
     // deinterlaced VBlank) and the adaptive kernel skips the motion tests its loaded words already decide. Both are

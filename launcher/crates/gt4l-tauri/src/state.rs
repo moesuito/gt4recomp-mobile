@@ -385,8 +385,9 @@ impl AppState {
         // TASK-180: a value the platform fixes (CoreGS 2.0 on Android) replaces whatever is stored, and is saved.
         let mut forced = false;
         for definition in gt4l_core::SETTINGS {
-            if let Some(value) = platform.forced_value(definition.id) {
-                if state.config.settings.get(definition.id) != value {
+            let stored = state.config.settings.get(definition.id).to_string();
+            if let Some(value) = platform.forced_value_for(definition.id, &stored) {
+                if stored != value {
                     let _ = state.config.settings.set(definition.id, value);
                     forced = true;
                 }

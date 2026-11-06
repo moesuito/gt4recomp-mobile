@@ -253,11 +253,15 @@ target_include_directories(gt4_hw_stream_sink PRIVATE "${NATIVE}" "${NATIVE}/gs_
 target_link_libraries(gt4_hw_stream_sink PUBLIC gt4_hw_backend)
 
 # The GS stream seam: on Android only its in-process CoreGS 2.0 sink (no GS process, no capture files).
-add_library(gt4_gs_stream_client STATIC "${NATIVE}/gs_stream/gs_stream_client.cpp")
+add_library(gt4_gs_stream_client STATIC "${NATIVE}/gs_stream/gs_stream_client.cpp"
+    "${NATIVE}/gs_stream/armsx2_gs_sink.cpp")
 target_include_directories(gt4_gs_stream_client PUBLIC "${NATIVE}/gs_stream" "${NATIVE}")
 target_link_libraries(gt4_gs_stream_client PUBLIC gt4_perf_probe gt4_install_paths gt4_quickfix gt4_hw_stream_sink
     gt4_platform)
-target_compile_definitions(gt4_gs_stream_client PRIVATE GT4_GS_STREAM_HW INTERFACE GT4_GS_STREAM_CLIENT)
+# GT4_GS_STREAM_ARMSX2: the private test build's in-process ARMSX2 GS (libgt4gs.so, GPL, loaded at run time). It is an
+# extra renderer beside CoreGS 2.0; a build without the library still starts and refuses the option with a message.
+target_compile_definitions(gt4_gs_stream_client PRIVATE GT4_GS_STREAM_HW GT4_GS_STREAM_ARMSX2 INTERFACE
+    GT4_GS_STREAM_CLIENT)
 
 # ---- Runtime: the pinned donor plus the capsules of the rc14 v2.00 recipe -------------------------------------------
 set(RUNTIME_FILES)

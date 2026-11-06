@@ -23,17 +23,35 @@ fn quoted(text: &str) -> String {
 
 /// The release label of this build (TASK-109): `GT4_RELEASE_LABEL=rc5` makes the launcher version `1.3.0-rc5`, and
 /// `GT4_RELEASE_LABEL=android-test3` makes it `1.3.0-android-test3` (the Android test builds, TASK-180). Empty or
-/// missing = a stable build. Anything but `rc<N>` or `android-test<N>` stops the build.
+/// missing = a stable build. Anything but `rc<N>` or `android-test<N>` (an Android test build may carry one more
+/// `-suffix`, the private builds' name, e.g. `android-test4-armsx2gs-private`) stops the build.
 fn release_label() {
     println!("cargo:rerun-if-env-changed=GT4_RELEASE_LABEL");
     let label = std::env::var("GT4_RELEASE_LABEL").unwrap_or_default();
     let label = label.trim();
     if !label.is_empty() {
-        let valid = ["rc", "android-test"].iter().any(|prefix| {
-            let digits = label.strip_prefix(prefix).unwrap_or("");
-            !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) && !digits.starts_with('0')
-        });
-        assert!(valid, "GT4_RELEASE_LABEL must be empty, rc<N> or android-test<N> (N from 1, no leading zero), got '{label}'");
+        let valid = |prefix: &str, allow_suffix: bool| {
+            let rest = label.strip_prefix(prefix).unwrap_or("");
+            let (digits, suffix) = match rest.split_once('-') {
+                Some((digits, suffix)) => (digits, Some(suffix)),
+                None => (rest, None),
+            };
+            let numbered = !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) && !digits.starts_with('0');
+            let suffix_ok = match suffix {
+                None => true,
+                Some(text) => {
+                    allow_suffix
+                        && !text.is_empty()
+                        && text.bytes().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+                }
+            };
+            numbered && suffix_ok
+        };
+        let valid = valid("rc", false) || valid("android-test", true);
+        assert!(
+            valid,
+            "GT4_RELEASE_LABEL must be empty, rc<N> or android-test<N> (N from 1, no leading zero; android-test may carry -suffix), got '{label}'"
+        );
     }
     let cargo = std::env::var("CARGO_PKG_VERSION").expect("CARGO_PKG_VERSION");
     let full = if label.is_empty() { cargo } else { format!("{cargo}-{label}") };

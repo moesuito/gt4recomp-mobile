@@ -264,6 +264,10 @@ fn settings_table_versioned(
             "monitor" => fill_monitor_row(&mut row, settings, monitors),
             "resolution" => fill_resolution_row(&mut row, settings, monitors),
             "render_scale" => fill_render_scale_row(&mut row, settings, monitors, integrated_gpu, platform),
+            // The renderer choices belong to the platform: GSdx and CoreGS 2.0 on Windows, CoreGS 2.0 and the private
+            // build's ARMSX2 GS on Android. The ARMSX2 resolution row exists only while that renderer is chosen.
+            "renderer" => keep_platform_renderers(&mut row, platform),
+            "armsx2_scale" => row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS }),
             "vsync" if settings.get("renderer") == gt4l_core::settings::CORE_GS_20 => without_fast_vsync(&mut row),
             // TASK-135: CoreGS 2.0's own; GSdx has its overlay rows.
             "performance_hud" => row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
@@ -346,6 +350,21 @@ fn settings_table_versioned(
         }
     }
     json!({ "max_upscale": MAX_UPSCALE_DEFAULT, "platform": platform.name(), "rows": rows })
+}
+
+/// Removes the renderer choices this platform cannot run (GSdx on Android; ARMSX2 never on Windows).
+fn keep_platform_renderers(row: &mut Value, platform: Platform) {
+    if let Some(values) = row["values"].as_array_mut() {
+        values.retain(|value| {
+            value["value"]
+                .as_str()
+                .is_some_and(|choice| platform.allows_renderer(choice))
+        });
+    }
+    if !platform.allows_renderer(row["current"].as_str().unwrap_or("")) {
+        let fallback = if platform.has_gsdx() { gt4l_core::settings::PCSX2_GS } else { gt4l_core::settings::CORE_GS_20 };
+        row["current"] = json!(fallback);
+    }
 }
 
 /// CoreGS 2.0 has no "Fast" vsync (owner, 2026-10-30). A value stored for GSdx stays stored and shows as On here, which is

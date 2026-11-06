@@ -2,6 +2,9 @@
 // Game-side GS stream backend; see gs_stream_client.hpp and docs/GS-STREAM-PROTOCOL.md section 7.
 #include "gs_stream_client.hpp"
 #include "gs_stream_sink.hpp"
+#ifdef GT4_GS_STREAM_ARMSX2
+#include "armsx2_gs_sink.hpp"
+#endif
 
 // TASK-180: the GS process path (GT4_RENDERER=pcsx2, gt4-gs.exe over shared memory) and the stream capture files exist
 // only on Windows. Elsewhere the client is the in-process CoreGS 2.0 sink alone (GT4_RENDERER=hw).
@@ -1151,10 +1154,11 @@ Renderer parse_renderer() {
 #endif
 #ifdef GT4_GS_STREAM_HW
   if (std::strcmp(value, "hw") == 0) return Renderer::hw;
-  refuse(std::string("GT4_RENDERER=\"") + value + "\" is not donor, pcsx2 or hw");
-#else
-  refuse(std::string("GT4_RENDERER=\"") + value + "\" is not donor or pcsx2");
 #endif
+#ifdef GT4_GS_STREAM_ARMSX2
+  if (std::strcmp(value, "armsx2") == 0) return Renderer::armsx2;
+#endif
+  refuse(std::string("GT4_RENDERER=\"") + value + "\" is not a renderer of this build");
 }
 
 // Created on first use; null when the donor renderer runs without a capture (every hook then returns at once).
@@ -1162,7 +1166,7 @@ Renderer parse_renderer() {
 Client *client() {
   static Client *const instance = []() -> Client * {
     const Renderer mode = parse_renderer();
-    if (mode == Renderer::hw) return nullptr;  // TASK-027: the in-process sink (hw_sink()) takes every hook
+    if (mode == Renderer::hw || mode == Renderer::armsx2) return nullptr;  // the in-process sink takes every hook
     const char *capture = std::getenv("GT4_GS_CAPTURE");
     if (mode == Renderer::donor && !(capture && *capture)) return nullptr;
     auto *created = new Client(mode);
@@ -1310,23 +1314,35 @@ bool stream_renderer() { return renderer() != Renderer::donor; }
 
 namespace {
 
-#ifdef GT4_GS_STREAM_HW
-// TASK-027: GT4_RENDERER=hw. Started on first use (EE thread); a failed start refuses the game like a failed GS process.
+// In-process renderers: GT4_RENDERER=hw (TASK-027, CoreGS 2.0 development builds) and GT4_RENDERER=armsx2 (the
+// private Android test build with libgt4gs.so). Started on first use (EE thread); a failed start refuses the game like a
+// failed GS process.
 const InProcessSink *hw_sink() {
   static const InProcessSink *const sink = []() -> const InProcessSink * {
-    if (renderer() != Renderer::hw) return nullptr;
+    const Renderer mode = renderer();
+    if (mode != Renderer::hw && mode != Renderer::armsx2) return nullptr;
     const char *capture = std::getenv("GT4_GS_CAPTURE");
-    if (capture && *capture) refuse("GT4_GS_CAPTURE is not supported with GT4_RENDERER=hw yet");
-    const InProcessSink &chosen = hw_in_process_sink();
-    std::string error;
-    if (!chosen.start(error)) refuse("GT4_RENDERER=hw: the HWR backend could not start: " + error);
-    return &chosen;
+    if (capture && *capture) refuse("GT4_GS_CAPTURE is not supported with an in-process GS yet");
+#ifdef GT4_GS_STREAM_ARMSX2
+    if (mode == Renderer::armsx2) {
+      const InProcessSink &chosen = armsx2_in_process_sink();
+      std::string error;
+      if (!chosen.start(error)) refuse("GT4_RENDERER=armsx2: libgt4gs could not start: " + error);
+      return &chosen;
+    }
+#endif
+#ifdef GT4_GS_STREAM_HW
+    if (mode == Renderer::hw) {
+      const InProcessSink &chosen = hw_in_process_sink();
+      std::string error;
+      if (!chosen.start(error)) refuse("GT4_RENDERER=hw: the HWR backend could not start: " + error);
+      return &chosen;
+    }
+#endif
+    refuse("an in-process GS renderer was selected in a build without one");
   }();
   return sink;
 }
-#else
-const InProcessSink *hw_sink() { return nullptr; }
-#endif
 
 // The hw form of Client::privileged: same address filter and the same MTVU ordering (TASK-041), no stream record.
 void hw_privileged(const InProcessSink &sink, std::uint32_t address, std::uint64_t value) {

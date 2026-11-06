@@ -33,3 +33,7 @@ __pycache__/
 
 # Owner's community patch (never committed).
 *.xdelta
+
+# Private ARMSX2 GS test build: the resources copied out of the vendored ARMSX2 tree into the APK assets are GPL data,
+# staged by android/stage-armsx2gs.cmd and never committed.
+/launcher/crates/gt4l-tauri/gen/android/app/src/main/assets/armsx2gs/

@@ -402,6 +402,65 @@ pub fn gs_config_text(
     }
 }
 
+/// PRIVATE Android test build: the ARMSX2 GS folders under the app's external files folder. `config` is the file the
+/// launcher writes (the same base settings a gt4-gs session gets on Windows); `overrides` is the owner's own file, created
+/// empty once and never rewritten, so his extra lines survive every Play.
+pub struct Armsx2Paths {
+    pub root: PathBuf,
+    pub config: PathBuf,
+    pub overrides: PathBuf,
+    pub resources: PathBuf,
+}
+
+/// The ARMSX2 GS folders under `external`, the app's external files folder.
+pub fn armsx2_paths(external: &std::path::Path) -> Armsx2Paths {
+    let root = external.join("armsx2gs");
+    Armsx2Paths {
+        config: root.join("armsx2-gs.ini"),
+        overrides: root.join("armsx2-gs-extra.ini"),
+        resources: root.join("resources"),
+        root,
+    }
+}
+
+/// The armsx2-gs.ini text of a session: the Windows launcher's own base settings (`gs_config_text`: the same table, the
+/// same blending accuracy, aspect, OSD and folder rows) with the ARMSX2 resolution multiplier from the `armsx2_scale` row
+/// instead of the CoreGS/GSdx plan's integer one. A fractional multiplier needs `ExtendedUpscalingMultipliers`, so that
+/// key is added where the row is fractional.
+pub fn armsx2_config_text(settings: &Settings, paths: &Armsx2Paths, textures: &std::path::Path) -> Result<String, String> {
+    let gs_paths = Pcsx2Paths {
+        executable: paths.root.join("libgt4gs.so"),
+        executable_sha256: String::new(),
+        config: paths.config.clone(),
+        cache: paths.root.join("cache"),
+        data_root: paths.root.clone(),
+        textures: textures.to_path_buf(),
+    };
+    let mut text = gs_config_text(settings, &gs_paths, None, false)?;
+    let scale = settings.get("armsx2_scale");
+    let scale = if scale.is_empty() { "1" } else { scale };
+    // The multiplier is the row's own value (fractional allowed), not the integer the display plan computes.
+    text = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("upscale_multiplier") {
+                if scale.contains('.') {
+                    format!("upscale_multiplier = {scale}\nExtendedUpscalingMultipliers = true")
+                } else {
+                    format!("upscale_multiplier = {scale}")
+                }
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !text.ends_with('\n') {
+        text.push('\n');
+    }
+    Ok(text)
+}
+
 /// Name of the file the game reads for a direct start (TASK-097), in the user config folder.
 pub const STANDALONE_CONFIG_FILE: &str = "game.ini";
 

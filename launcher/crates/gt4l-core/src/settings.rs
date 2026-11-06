@@ -80,10 +80,29 @@ pub struct SettingDef {
 pub const PCSX2_GS: &str = "pcsx2";
 /// Our own hardware renderer, inside the game executable (beta).
 pub const CORE_GS_20: &str = "coregs20";
+/// PRIVATE Android test build only: the ARMSX2 (GPL) GS running inside the game process beside CoreGS 2.0. Never shipped,
+/// never offered on Windows.
+pub const ARMSX2_GS: &str = "armsx2";
 
 const RENDERER_CHOICES: &[Choice] = &[
     Choice { value: PCSX2_GS, label: "GSdx", selectable: true },
     Choice { value: CORE_GS_20, label: "CoreGS 2.0 (recommended)", selectable: true },
+    Choice { value: ARMSX2_GS, label: "ARMSX2 GS (experimental, private build)", selectable: true },
+];
+
+/// The ARMSX2 GS resolution multipliers (private Android test build): whole and fractional scales. PCSX2 applies a
+/// fractional multiplier only with ExtendedUpscalingMultipliers on, which `armsx2_gs_config_text` writes.
+const ARMSX2_SCALE_CHOICES: &[Choice] = &[
+    Choice { value: "1", label: "1x (native)", selectable: true },
+    Choice { value: "1.25", label: "1.25x", selectable: true },
+    Choice { value: "1.5", label: "1.5x", selectable: true },
+    Choice { value: "1.75", label: "1.75x", selectable: true },
+    Choice { value: "2", label: "2x", selectable: true },
+    Choice { value: "2.5", label: "2.5x", selectable: true },
+    Choice { value: "3", label: "3x", selectable: true },
+    Choice { value: "4", label: "4x", selectable: true },
+    Choice { value: "5", label: "5x", selectable: true },
+    Choice { value: "6", label: "6x", selectable: true },
 ];
 
 /// The strength of CoreGS 2.0's FSR1 sharpening (GSdx has CAS instead).
@@ -183,6 +202,18 @@ pub const SETTINGS: &[SettingDef] = &[
                GSdx is optional: it is downloaded when you choose it.",
         kind: Kind::Choice(RENDERER_CHOICES),
         default: PCSX2_GS,
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_scale",
+        page: Page::Graphics,
+        group: "Renderer",
+        title: "ARMSX2 GS resolution",
+        info: "Only for the ARMSX2 GS renderer (private test build): the internal resolution multiplier. Fractional \
+               values (1.25x to 1.75x) and 2.5x need a graphics driver that supports them. Extra GS lines the player adds \
+               go into armsx2-gs-extra.ini, beside armsx2-gs.ini in the app's files folder.",
+        kind: Kind::Choice(ARMSX2_SCALE_CHOICES),
+        default: "1",
         connected: true,
     },
     SettingDef {

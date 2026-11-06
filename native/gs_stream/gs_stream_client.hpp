@@ -8,6 +8,8 @@
 //   "hw"              TASK-027 development builds only (CMake GT4_HW_GS=ON, compile definition GT4_GS_STREAM_HW): no
 //                     donor Vulkan device and no GS process; the same hooks feed the in-process HWR backend
 //                     (gs_stream_sink.hpp). GT4_GS_CAPTURE is refused in this mode. Other builds refuse "hw".
+//   "armsx2"          PRIVATE Android test build only (compile definition GT4_GS_STREAM_ARMSX2): the same in-process
+//                     sink, filled by libgt4gs.so, which runs the ARMSX2 (GPL) GS in this process. Never shipped.
 // Any other value stops the process before the game starts.
 //
 // TASK-036 (slice193), pcsx2 mode: GT4_GS_PROCESS_SHA256=<hex> refuses a GS process whose SHA-256 differs (the launcher
@@ -39,7 +41,7 @@ class Doorbell;
 
 namespace gt4::gs_stream {
 
-enum class Renderer { donor, pcsx2, hw };
+enum class Renderer { donor, pcsx2, hw, armsx2 };
 
 // Parsed once from GT4_RENDERER. An unknown value prints a message and exits with EXIT_FAILURE.
 Renderer renderer();

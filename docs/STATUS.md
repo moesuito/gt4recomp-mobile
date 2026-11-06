@@ -1,3 +1,30 @@
+## Private GPL test build: the ARMSX2 GS beside CoreGS 2.0 (private/armsx2-gs-s23, 2026-11-05)
+
+**PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** The clone `gt4-private-armsx2gs` (push disabled)
+carries a third GS renderer for the Android app: ARMSX2's GS (commit `1049db37fb`) running inside the game process, fed
+by the same GS stream the game sends to `gt4-gs.exe` on Windows, through an in-process queue (no IPC). Document:
+`docs/ARMSX2-GS-PRIVATE.md`.
+
+- **Selection:** `GT4_RENDERER=armsx2` (`native/gs_stream/armsx2_gs_sink.cpp` loads `libgt4gs.so` at run time and fills the
+  existing in-process sink table). The launcher's Renderer row on Android offers CoreGS 2.0 (default) and
+  "ARMSX2 GS (experimental, private build)"; a new `armsx2_scale` row gives 1x, 1.25x, 1.5x, 1.75x, 2x, 2.5x, 3x, 4x, 5x
+  and 6x.
+- **Settings:** `armsx2-gs.ini` written on every Play from the same GS table as a Windows gt4-gs session (blending,
+  aspect 16:9, the GT4 display crop, OSD off, texture loading only), with the chosen multiplier and
+  `ExtendedUpscalingMultipliers = true` for a fractional one; the owner's own lines go into `armsx2-gs-extra.ini` beside
+  it, applied on top. Both in the app's external files folder, under `armsx2gs/`.
+- **Back end:** OpenGL ES (ARMSX2's Android default). The Vulkan back end needs shaderc's runtime GLSL compiler, whose
+  glslang/SPIRV-Tools sources are not in the local ARMSX2 clone and were not downloaded; the library reports
+  `gt4gs_has_vulkan() == 0`.
+- **APK:** `1.3.0-android-test4-armsx2gs-private`, versionCode 4, the owner's release key, in the main checkout's
+  `private/android-private-armsx2gs/` (sha256 `645efd4679d307f83d60ae66b56441ff940bd0abf70fdc913c75ebc3d41b6fc5`,
+  143,684,202 bytes).
+- **Emulator evidence:** the app installs and updates, the launcher shows the new rows, Play with ARMSX2 writes the two
+  files, starts the game with `GT4_RENDERER=armsx2`, the game loads `libgt4gs.so`, the ARMSX2 core boots as a GS-only VM
+  (serial `SCUS-97328`, GameDB GS fixes applied), the window is attached and an EGL context is created — then the GLES
+  backend refuses: the emulator's guest GL is SwiftShader **ES 3.0** and ARMSX2 needs 3.1 (`uvec2`). CoreGS 2.0 still
+  runs in the same APK. The owner's S23 (Adreno 740, ES 3.2) is above that floor; not yet run on the phone.
+
 ## Android test4: the Performance report back, TASK-182 savings on, UMA phase 1 (TASK-180, 2026-11-05 evening)
 
 `1.3.0-android-test4` (arm64, versionCode 4, same release key) answers the owner's test3 findings.
