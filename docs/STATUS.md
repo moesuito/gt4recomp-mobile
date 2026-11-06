@@ -1,3 +1,24 @@
+## Private GPL test build, round 5: the HUD's font, the no-JIT link, the Spec II picture (private/armsx2-gs-s23, 2026-11-06)
+
+**PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** On top of round 4:
+
+- **The ARMSX2 HUD is CoreGS 2.0's panel, font included.** The missing `resources/fonts` made ImGui fall back to the
+  proportional Roboto; `stage-armsx2gs.cmd` now ships RobotoMono-Medium (and the other fonts) and the panel uses
+  CoreGS's metrics (19 px line box at 16 px, floor(line/2) padding, 36 columns, 12 px margin). Side-by-side:
+  `build/evidence/t180-rc15c/21-hud-side-by-side.png` — the panels line up line for line.
+- **No-JIT finished:** the ARM64 guest recompilers are no longer compiled or linked (`GT4GS_NO_JIT`), with a generated
+  stub file for the opcode tables. `llvm-nm` on `libgt4gs.so`: **0 vixl symbols, 0 recompiler entries** (was 9,212
+  vixl symbols). The game still boots and renders through Vulkan in the emulator.
+- **Spec II picture:** not an ARMSX2-side fault. Same session: v2.00 renders through ARMSX2 (card dialog, 264,798
+  B/frame), Spec II sends only the VSync heartbeat (605 B/frame) and the game's own F7/F8 report shows gif 0 bytes and
+  0 primitives with ~3.2 s per guest frame in `run_due_events`; CoreGS sees 0 primitives too and does not present in
+  this emulator. The game crawls through its early boot under ARM translation; no game fix made.
+- **Merge (TASK-186):** `origin/task/180-android-emulator` is still at `7f2e6c43` when this round finished, so the
+  branch was not merged again and the "Blending accuracy"/"Readbacks" mapping is not done — a follow-up when the new
+  commit lands.
+- **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionCode **103001503**, 225,019,225 bytes, sha256
+  `136a7bd1654c931c968711da002b92d3351a4a447a3a38d8c333e1cd439d3af7`, owner's release key.
+
 ## Private GPL test build, round 4: no JIT, the CoreGS HUD, Vulkan and FSR1, Spec II from test5 (private/armsx2-gs-s23, 2026-11-06)
 
 **PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** This round adds, on top of rc15:
