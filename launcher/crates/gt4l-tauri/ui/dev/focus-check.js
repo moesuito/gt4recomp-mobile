@@ -670,6 +670,35 @@
     delete GT4.devGamepads;
   }
 
+  // TASK-185 screenshots: the Controls page with the Virtual controller section focused, and the layout editor with
+  // one element selected (used at 2400x1080 and 1366x768, in both languages).
+  async function scenarioVpadControls() {
+    await setHash("#/settings/controls");
+    await wait(700);
+    var selector = document.querySelector(".cx-vpad [data-setting=\"virtual_pad\"]");
+    if (selector) {
+      GT4.nav.setMode("pad");
+      selector.focus({ preventScroll: true });
+      selector.scrollIntoView({ block: "nearest" });
+    }
+    await wait(300);
+  }
+
+  async function scenarioVpadEditor() {
+    await setHash("#/settings/controls");
+    await wait(700);
+    var edit = document.querySelector("[data-action=\"vpad-edit\"]");
+    if (edit) {
+      edit.click();
+    }
+    await wait(500);
+    var chip = document.querySelector(".vp-chip[data-el=\"cross\"]");
+    if (chip) {
+      chip.focus();
+    }
+    await wait(400);
+  }
+
   // The screenshot state (scenario "4k", name kept for the screenshot list): Graphics with Render scale at 200%, the
   // slider focused in pad mode (TASK-080 addendum: there is no Internal resolution row any more).
   async function scenario4k() {
@@ -1019,6 +1048,161 @@
     check("the rows that went out are gone after the animation", document.querySelectorAll(".row-departing").length === 0, "left behind");
     await GT4.backend.call("set_setting", { id: "renderer", value: renderer });
     await setHash("#/settings/general");
+    await setHash("#/settings/graphics");
+  }
+
+  // TASK-193 (owner, 2026-11-06): an option row changes only through its arrows with a mouse or a finger. A click on the
+  // row's label or on its value does nothing; the left arrow steps back and the right arrow forward. The keyboard and the
+  // pad keep stepping forward on A and left/right, and the arrows got a bigger invisible hit area.
+  function pointerClick(node) {
+    var box = node.getBoundingClientRect();
+    var where = {
+      bubbles: true, cancelable: true, detail: 1, view: root,
+      clientX: Math.round(box.left + box.width / 2), clientY: Math.round(box.top + box.height / 2)
+    };
+    node.dispatchEvent(new MouseEvent("mousedown", where));
+    node.dispatchEvent(new MouseEvent("mouseup", where));
+    node.dispatchEvent(new MouseEvent("click", where));
+  }
+
+  function rowNode(id) {
+    return document.querySelector(".row[data-row=\"" + id + "\"]");
+  }
+
+  // The hit area the stylesheet gives the arrows: the base rule and the (pointer: coarse) rule of css/app.css.
+  function arrowHitFromRules(coarse) {
+    var found = "";
+    function walk(rules) {
+      Array.prototype.forEach.call(rules || [], function (rule) {
+        if (rule.cssRules && rule.media) {
+          var matches = rule.media.mediaText.indexOf("pointer: coarse") >= 0;
+          if (matches === coarse) {
+            walk(rule.cssRules);
+          }
+          return;
+        }
+        if (!rule.selectorText || rule.selectorText.indexOf(".selector-arrow") < 0 || !rule.style) {
+          return;
+        }
+        var hit = rule.style.getPropertyValue("--selector-arrow-hit");
+        if (hit) {
+          found = hit.trim();
+        }
+      });
+    }
+    Array.prototype.forEach.call(document.styleSheets, function (sheet) {
+      try {
+        walk(sheet.cssRules);
+      } catch (err) {
+        // a stylesheet from another origin: nothing to read
+      }
+    });
+    return found;
+  }
+
+  async function optionPointerChecks() {
+    await setHash("#/settings/graphics");
+    await wait(300);
+    var vsync = selectorNode("vsync");
+    check("a dropdown row is on Graphics for the pointer checks", !!vsync, "no vsync row");
+    if (!vsync) {
+      return;
+    }
+    var first = selectorText("vsync");
+    var firstValue = GT4.settingsModel.findRow(await GT4.backend.call("get_settings_table"), "vsync").current;
+    pointerClick(rowNode("vsync").querySelector(".k > span"));
+    await wait(200);
+    check("a click on the row's label does not change the value", selectorText("vsync") === first, selectorText("vsync") + " after the label click");
+    pointerClick(vsync.querySelector(".selector-value:not(.is-leaving)"));
+    await wait(200);
+    check("a click on the row's value does not change the value", selectorText("vsync") === first, selectorText("vsync") + " after the value click");
+    var tableAfterBody = GT4.settingsModel.findRow(await GT4.backend.call("get_settings_table"), "vsync");
+    check("the row body click writes nothing", !!tableAfterBody && String(tableAfterBody.current) === String(firstValue), tableAfterBody ? String(tableAfterBody.current) : "no row");
+
+    var arrows = vsync.querySelectorAll(".selector-arrow");
+    pointerClick(arrows[0]);
+    await wait(200);
+    var back = selectorText("vsync");
+    check("the left arrow steps back", back !== first, back + " (was " + first + ")");
+    pointerClick(arrows[1]);
+    await wait(200);
+    check("the right arrow steps forward again", selectorText("vsync") === first, selectorText("vsync"));
+
+    // The hit area: 32 x 32 px with a mouse, 44 x 44 px with a finger, drawn on the same 24 px glyph box.
+    var leftBox = arrows[0].getBoundingClientRect();
+    var rightBox = arrows[1].getBoundingClientRect();
+    check("each arrow has a 32 x 32 px hit area with a mouse",
+      Math.round(leftBox.width) >= 32 && Math.round(leftBox.height) >= 32 && Math.round(rightBox.width) >= 32 && Math.round(rightBox.height) >= 32,
+      Math.round(leftBox.width) + "x" + Math.round(leftBox.height) + " and " + Math.round(rightBox.width) + "x" + Math.round(rightBox.height));
+    check("a finger gets a 44 x 44 px hit area (the coarse rule)", arrowHitFromRules(true) === "44px" && arrowHitFromRules(false) === "32px",
+      "coarse " + arrowHitFromRules(true) + ", fine " + arrowHitFromRules(false));
+    var windowBox = vsync.querySelector(".selector-window").getBoundingClientRect();
+    var middleLeft = windowBox.left + windowBox.width / 3;
+    var middleRight = windowBox.right - windowBox.width / 3;
+    var leftReach = leftBox.right > middleLeft && leftBox.right < middleRight;
+    var rightReach = rightBox.left > middleLeft && rightBox.left < middleRight;
+    check("the arrows do not reach the middle of the value", !leftReach && !rightReach,
+      "left reaches " + Math.round(leftBox.right - windowBox.left) + " of " + Math.round(windowBox.width) + ", right from " + Math.round(rightBox.left - windowBox.left));
+    var glyph = arrows[0].querySelector("svg").getBoundingClientRect();
+    check("the arrow glyph stays where it was: centred in the drawn 24 px box",
+      Math.abs((glyph.left + glyph.width / 2) - (vsync.getBoundingClientRect().left + 12)) < 0.6,
+      "glyph centre " + (glyph.left + glyph.width / 2) + ", box centre " + (vsync.getBoundingClientRect().left + 12));
+
+    // The keyboard and the pad keep their behaviour: left and right step, A goes forward.
+    vsync.focus({ preventScroll: true });
+    press("ArrowRight");
+    await wait(200);
+    check("right on a focused row still steps it", selectorText("vsync") !== first, selectorText("vsync"));
+    press("ArrowLeft");
+    await wait(200);
+    check("left on a focused row still steps it back", selectorText("vsync") === first, selectorText("vsync"));
+    GT4.nav.activate();
+    await wait(200);
+    check("A on a focused row still goes to the next value", selectorText("vsync") !== first, selectorText("vsync"));
+    pointerClick(arrows[0]);
+    await wait(200);
+    check("the arrow puts the value back after the pad step", selectorText("vsync") === first, selectorText("vsync"));
+
+    // A toggle row follows the same pointer rule.
+    var toggle = selectorNode("fxaa");
+    check("a toggle row is on Graphics for the pointer checks", !!toggle, "no fxaa row");
+    if (toggle) {
+      var toggleFirst = selectorText("fxaa");
+      pointerClick(rowNode("fxaa").querySelector(".k > span"));
+      await wait(200);
+      check("a click on a toggle row's label does not change it", selectorText("fxaa") === toggleFirst, selectorText("fxaa"));
+      pointerClick(rowNode("fxaa").querySelector(".selector-value:not(.is-leaving)"));
+      await wait(250);
+      check("a click on a toggle row's value does not change it", selectorText("fxaa") === toggleFirst, selectorText("fxaa"));
+      var toggleArrows = toggle.querySelectorAll(".selector-arrow");
+      pointerClick(toggleArrows[0]);
+      await wait(250);
+      check("a toggle row's left arrow steps it", selectorText("fxaa") !== toggleFirst, selectorText("fxaa"));
+      pointerClick(toggle.querySelectorAll(".selector-arrow")[1]);
+      await wait(250);
+      check("a toggle row's right arrow steps it back", selectorText("fxaa") === toggleFirst, selectorText("fxaa"));
+    }
+
+    // The Wheel page's own cards use the same control.
+    await setHash("#/settings/wheel");
+    await wait(400);
+    var wheelToggle = selectorNode("wheel-ffb-enabled");
+    check("the force feedback card has an option row", !!wheelToggle, "no wheel-ffb-enabled row");
+    if (wheelToggle) {
+      var wheelFirst = selectorText("wheel-ffb-enabled");
+      pointerClick(rowNode("wheel-ffb-enabled").querySelector(".k > span"));
+      await wait(250);
+      check("a click on a Wheel card's row label does not change it", selectorText("wheel-ffb-enabled") === wheelFirst, selectorText("wheel-ffb-enabled"));
+      pointerClick(wheelToggle.querySelector(".selector-value:not(.is-leaving)"));
+      await wait(250);
+      check("a click on a Wheel card's row value does not change it", selectorText("wheel-ffb-enabled") === wheelFirst, selectorText("wheel-ffb-enabled"));
+      pointerClick(wheelToggle.querySelectorAll(".selector-arrow")[0]);
+      await wait(300);
+      check("a Wheel card's row steps through its arrows", selectorText("wheel-ffb-enabled") !== wheelFirst, selectorText("wheel-ffb-enabled"));
+      pointerClick(selectorNode("wheel-ffb-enabled").querySelectorAll(".selector-arrow")[1]);
+      await wait(300);
+      check("a Wheel card's row steps back through its arrows", selectorText("wheel-ffb-enabled") === wheelFirst, selectorText("wheel-ffb-enabled"));
+    }
     await setHash("#/settings/graphics");
   }
 
@@ -1773,6 +1957,19 @@
       current = Object.assign({}, current, { renderer_choice: "gsdx_fallback" });
       await wait(900);
       check("the last step says why GSdx was needed", lastStep().indexOf(T("setup.renderer_ready_gsdx")) >= 0, lastStep());
+      // TASK-180 (owner, 2026-11-06): on Android there is no renderer step and no GSdx anywhere on the page: CoreGS 2.0 is
+      // inside the game there and the PC GSdx is never downloaded.
+      var windowsPlatform = GT4.platform;
+      GT4.platform = "android";
+      current = Object.assign({}, current, { state: "done", renderer_step: "done", renderer_choice: "coregs20" });
+      await wait(900);
+      var androidLabels = Array.prototype.map.call(scratch.querySelectorAll(".steps li .t"), function (node) { return node.textContent; });
+      check("the Android setup page has no renderer step", androidLabels.indexOf(T("setup.step_renderer")) < 0, androidLabels.join(" | "));
+      check("the Android setup page never mentions GSdx or gt4-gs",
+        scratch.textContent.indexOf("GSdx") < 0 && scratch.textContent.indexOf("gt4-gs") < 0,
+        String(scratch.textContent.indexOf("GSdx")) + " / " + String(scratch.textContent.indexOf("gt4-gs")));
+      GT4.platform = windowsPlatform;
+      await wait(900);
     } finally {
       if (handle) {
         handle.destroy();
@@ -1996,6 +2193,237 @@
     delete GT4.devWheelLive;
   }
 
+  // TASK-185: the Controls page's "Virtual controller" section and its full-screen layout editor, keyboard and pad.
+  async function virtualPadChecks() {
+    async function vpadView() {
+      return GT4.backend.call("get_virtual_pad");
+    }
+    function elementOf(layout, id) {
+      return layout.elements.filter(function (element) { return element.id === id; })[0];
+    }
+    function editorState() {
+      return GT4.virtualPadEditor.current ? GT4.virtualPadEditor.current.state : null;
+    }
+    function pad(name) {
+      GT4_MOCK.emit("pad-nav", { name: name });
+    }
+    // Shift with an arrow: the editor resizes instead of moving.
+    function pressShift(name) {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: name, shiftKey: true, bubbles: true, cancelable: true }));
+      document.dispatchEvent(new KeyboardEvent("keyup", { key: name, shiftKey: true, bubbles: true, cancelable: true }));
+    }
+
+    await setHash("#/settings/controls");
+    await wait(500);
+    var section = document.querySelector(".cx-vpad");
+    check("the Controls page has the Virtual controller section", !!section, "no section");
+    check("the section offers the mode, Edit layout, Reset and the two global rows",
+      !!section && !!section.querySelector("[data-setting=\"virtual_pad\"]") &&
+      !!section.querySelector("[data-action=\"vpad-edit\"]") && !!section.querySelector("[data-action=\"vpad-reset\"]") &&
+      !!section.querySelector("input[data-setting=\"virtual_pad_opacity\"]") &&
+      !!section.querySelector("[data-setting=\"virtual_pad_haptics\"]"), section ? section.textContent.slice(0, 60) : "no section");
+    check("the virtual pad mode starts on Auto", selectorText("virtual_pad") === T("choice.virtual_pad.auto"), selectorText("virtual_pad"));
+    await stepSelector("virtual_pad", 1);
+    check("the mode steps to Always", selectorText("virtual_pad") === T("choice.virtual_pad.always"), selectorText("virtual_pad"));
+    check("Always is stored at once", (await vpadView()).mode === "always", (await vpadView()).mode);
+    await stepSelector("virtual_pad", 1);
+    check("the mode steps to Off", (await vpadView()).mode === "off", (await vpadView()).mode);
+    await stepSelector("virtual_pad", 1);
+    check("the mode loops back to Auto", (await vpadView()).mode === "auto", (await vpadView()).mode);
+
+    // The global opacity writes the layout file at once.
+    var opacity = section.querySelector("input[data-setting=\"virtual_pad_opacity\"]");
+    opacity.focus({ preventScroll: true });
+    press("ArrowRight");
+    await wait(400);
+    check("the global opacity steps up and is saved", Math.round((await vpadView()).layout.opacity * 100) === 65,
+      String((await vpadView()).layout.opacity));
+    check("the section now says the layout is the player's",
+      (document.querySelector(".cx-vpad-status") || {}).textContent === T("vpad.source_player"),
+      (document.querySelector(".cx-vpad-status") || {}).textContent);
+
+    // Edit layout: the full-screen editor over the page (pad input, as on the phone).
+    GT4.nav.setMode("pad");
+    document.querySelector("[data-action=\"vpad-edit\"]").focus({ preventScroll: true });
+    GT4.nav.activate();
+    await wait(400);
+    var editor = document.querySelector(".vp-editor");
+    check("Edit layout opens the full-screen editor", !!editor, "no editor");
+    check("the editor draws every element and the F7 corner",
+      !!editor && editor.querySelectorAll(".vp-el").length === 12 && !!editor.querySelector(".vp-reserved"),
+      editor ? editor.querySelectorAll(".vp-el").length + " elements" : "no editor");
+    check("the editor opens on the 20:9 shape", !!editor &&
+      editor.querySelector(".vp-aspect-btn[data-aspect=\"20:9\"]").getAttribute("aria-pressed") === "true", "aspect");
+    check("the first element is selected with its controls", !!editorState() && editorState().selected === "lstick" &&
+      !!editor.querySelector("input[data-setting=\"vpad-size\"]") && !!editor.querySelector("input[data-setting=\"vpad-opacity\"]"),
+      editorState() ? editorState().selected : "no state");
+    check("the editor's footer offers Select, Back, Size, Undo and Reset", footerText().indexOf(T("vpad.hint.select")) >= 0 &&
+      footerText().indexOf(T("common.back")) >= 0 && footerText().indexOf(T("vpad.hint.resize")) >= 0 &&
+      footerText().indexOf(T("vpad.undo")) >= 0 && footerText().indexOf(T("vpad.reset_default")) >= 0, footerText());
+
+    // Keyboard: Tab (a chip) selects, the arrows move, Shift+arrow resizes.
+    var crossChip = document.querySelector(".vp-chip[data-el=\"cross\"]");
+    crossChip.focus();
+    await wait(120);
+    check("a focused chip selects its element", editorState().selected === "cross", editorState().selected);
+    var startX = elementOf(editorState().layout, "cross").x;
+    press("ArrowLeft");
+    await wait(120);
+    check("the keyboard arrows move the selected element", Math.abs(elementOf(editorState().layout, "cross").x - (startX - 0.02)) < 0.0001,
+      String(elementOf(editorState().layout, "cross").x));
+    check("the keyboard keeps the arrow from moving the page focus", document.activeElement === crossChip,
+      document.activeElement ? document.activeElement.tagName : "none");
+    var startSize = elementOf(editorState().layout, "cross").size;
+    pressShift("ArrowRight");
+    await wait(120);
+    check("Shift with an arrow resizes the selected element", elementOf(editorState().layout, "cross").size > startSize,
+      String(elementOf(editorState().layout, "cross").size));
+
+    // A / the D-pad: A on a chip grabs the element, the D-pad still walks the chips, the stick moves.
+    GT4.nav.setMode("pad");
+    GT4.nav.activate();
+    await wait(120);
+    check("A on a chip gives the element to the canvas", document.activeElement === editor.querySelector(".vp-canvas"),
+      document.activeElement ? document.activeElement.className : "none");
+    pad("right");
+    await wait(150);
+    check("a D-pad press on the canvas goes back to the element's chip", document.activeElement === crossChip,
+      document.activeElement ? document.activeElement.className : "none");
+    pad("right");
+    await wait(150);
+    check("the pad's D-pad still moves between the chips", editorState().selected !== "cross" && document.activeElement !== editor.querySelector(".vp-canvas"),
+      editorState().selected);
+    crossChip.focus();
+    await wait(100);
+    var stickStart = elementOf(editorState().layout, "cross").x;
+    GT4_MOCK.emit("pad-live", { sources: {}, sticks: { left: { x: 0.8, y: 0 }, right: { x: 0, y: 0 } } });
+    await wait(120);
+    check("the left stick moves the selected element", elementOf(editorState().layout, "cross").x > stickStart,
+      String(elementOf(editorState().layout, "cross").x));
+    var resizedFrom = elementOf(editorState().layout, "cross").size;
+    pad("rb");
+    await wait(150);
+    check("LB / RB resize the selected element", elementOf(editorState().layout, "cross").size > resizedFrom,
+      String(elementOf(editorState().layout, "cross").size));
+
+    // The wide buttons get a width control; a square button does not.
+    document.querySelector(".vp-chip[data-el=\"l1\"]").focus();
+    await wait(120);
+    check("a wide button shows its width control", !!document.querySelector("input[data-setting=\"vpad-width\"]"), "no width row");
+    document.querySelector(".vp-chip[data-el=\"square\"]").focus();
+    await wait(120);
+    check("a square button has no width control", !document.querySelector("input[data-setting=\"vpad-width\"]"), "width row shown");
+
+    // The F7 corner: moving a shoulder button onto it warns; Undo takes it back.
+    document.querySelector(".vp-chip[data-el=\"l2\"]").focus();
+    await wait(120);
+    var canvasNode = editor.querySelector(".vp-canvas");
+    canvasNode.focus();
+    for (var left = 0; left < 5; left++) {
+      press("ArrowLeft");
+      await wait(60);
+    }
+    for (var up = 0; up < 4; up++) {
+      press("ArrowUp");
+      await wait(60);
+    }
+    var warning = document.querySelector(".vp-warning");
+    check("an element on the F7 corner warns", !!warning && !warning.hidden && warning.textContent.indexOf("L2") >= 0,
+      warning ? warning.textContent : "no warning");
+    check("the element stops at the screen edge", elementOf(editorState().layout, "l2").x >= 0.0799,
+      String(elementOf(editorState().layout, "l2").x));
+    var undoButton = document.querySelector("[data-action=\"undo\"]");
+    for (var undoStep = 0; undoStep < 40 && !undoButton.disabled; undoStep++) {
+      undoButton.click();
+    }
+    await wait(200);
+    check("Undo takes the element off the F7 corner", (document.querySelector(".vp-warning") || {}).hidden === true,
+      (document.querySelector(".vp-warning") || {}).textContent);
+    check("Undoing everything makes the editor unsaved-free again (Save is disabled)",
+      document.querySelector("[data-action=\"save\"]").disabled === true, "Save stays enabled");
+
+    // A new change to save later: the cross moves left by one grid step.
+    document.querySelector(".vp-chip[data-el=\"cross\"]").focus();
+    await wait(100);
+    document.querySelector(".vp-canvas").focus();
+    press("ArrowLeft");
+    await wait(120);
+
+    // The other screen shapes preview without changing a coordinate.
+    var beforeAspect = JSON.stringify(editorState().layout.elements);
+    editor.querySelector(".vp-aspect-btn[data-aspect=\"16:9\"]").click();
+    await wait(200);
+    check("the 16:9 preview is chosen", editor.querySelector(".vp-aspect-btn[data-aspect=\"16:9\"]").getAttribute("aria-pressed") === "true" &&
+      editor.querySelector(".vp-aspect-btn[data-aspect=\"20:9\"]").getAttribute("aria-pressed") === "false", "aspect");
+    check("a preview shape never changes the layout", JSON.stringify(editorState().layout.elements) === beforeAspect, "layout changed");
+    editor.querySelector(".vp-aspect-btn[data-aspect=\"21:9\"]").click();
+    await wait(120);
+    check("the 21:9 preview is chosen too", editor.querySelector(".vp-aspect-btn[data-aspect=\"21:9\"]").getAttribute("aria-pressed") === "true", "aspect");
+
+    // Save: the file gets the moved element, the editor closes and the section reads the player's layout.
+    var savedCross = elementOf(editorState().layout, "cross").x;
+    document.querySelector("[data-action=\"save\"]").click();
+    await wait(500);
+    check("Save closes the editor", !document.querySelector(".vp-editor"), "still open");
+    var saved = await vpadView();
+    check("Save writes the edited layout", saved.source === "player" &&
+      Math.abs(elementOf(saved.layout, "cross").x - savedCross) < 0.0001, saved.source + " x " + elementOf(saved.layout, "cross").x);
+    check("the section reads the player's layout after Save",
+      (document.querySelector(".cx-vpad-status") || {}).textContent === T("vpad.source_player"),
+      (document.querySelector(".cx-vpad-status") || {}).textContent);
+
+    // Cancel after a change asks first; Discard keeps the saved file.
+    document.querySelector("[data-action=\"vpad-edit\"]").click();
+    await wait(350);
+    document.querySelector(".vp-chip[data-el=\"dpad\"]").focus();
+    await wait(100);
+    canvasNode = document.querySelector(".vp-canvas");
+    canvasNode.focus();
+    press("ArrowRight");
+    await wait(100);
+    document.querySelector("[data-action=\"cancel\"]").click();
+    await wait(250);
+    var discardTitle = (document.querySelector(".modal h3") || {}).textContent || "";
+    check("Cancel after a change asks before discarding", discardTitle === T("vpad.discard_title"), discardTitle);
+    var discard = Array.prototype.filter.call(document.querySelectorAll(".modal button"), function (button) {
+      return button.textContent === T("vpad.discard");
+    })[0];
+    if (discard) {
+      discard.click();
+      await wait(300);
+    }
+    check("Discard closes the editor and keeps the saved layout", !document.querySelector(".vp-editor") &&
+      Math.abs(elementOf((await vpadView()).layout, "dpad").x - 0.13) < 0.0001, "layout changed");
+
+    // Cancel with nothing changed closes at once.
+    document.querySelector("[data-action=\"vpad-edit\"]").click();
+    await wait(350);
+    document.querySelector("[data-action=\"cancel\"]").click();
+    await wait(250);
+    check("Cancel with no change closes at once", !document.querySelector(".vp-editor") && !document.querySelector(".modal"), "still open");
+
+    // Reset to default deletes the player's file (the section's own button, after a confirmation).
+    document.querySelector("[data-action=\"vpad-reset\"]").click();
+    await wait(200);
+    var resetTitle = (document.querySelector(".modal h3") || {}).textContent || "";
+    check("Reset to default asks first", resetTitle === T("vpad.reset_title"), resetTitle);
+    var confirmReset = Array.prototype.filter.call(document.querySelectorAll(".modal button"), function (button) {
+      return button.textContent === T("vpad.reset_default");
+    })[0];
+    if (confirmReset) {
+      confirmReset.click();
+      await wait(400);
+    }
+    var resetView = await vpadView();
+    check("Reset deletes the player's layout", resetView.source === "default" && !resetView.has_file, resetView.source);
+    check("the section says the default layout is in use",
+      (document.querySelector(".cx-vpad-status") || {}).textContent === T("vpad.source_default"),
+      (document.querySelector(".cx-vpad-status") || {}).textContent);
+    check("the reset button is disabled with no player's file",
+      document.querySelector("[data-action=\"vpad-reset\"]").disabled === true, "enabled");
+    check("no raw locale key shows on the Controls page", !/vpad\.[a-z_]+/.test(document.querySelector(".stage .content").textContent), "raw key");
+  }
+
   async function run() {
     await GT4.i18n.ready;
     await wait(300);
@@ -2011,6 +2439,14 @@
       }
       if (scenario === "render") {
         await scenarioRender();
+        return;
+      }
+      if (scenario === "vpad-controls") {
+        await scenarioVpadControls();
+        return;
+      }
+      if (scenario === "vpad-editor") {
+        await scenarioVpadEditor();
         return;
       }
       if (scenario === "general" || scenario === "graphics") {
@@ -2033,7 +2469,11 @@
       await firstStartHintChecks();
       await advancedSectionChecks();
       await controlsChecks();
+      await virtualPadChecks();
       await wheelChecks();
+      // The pointer rule of the option rows, after the wheel page's own checks (a wheel setting written here clears the
+      // mock's "preset applied by itself" notice those checks read).
+      await optionPointerChecks();
       await gamesChecks();
       await achievementsChecks();
       await shaderWindowChecks();

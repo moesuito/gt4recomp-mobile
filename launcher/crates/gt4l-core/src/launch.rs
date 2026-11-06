@@ -12,6 +12,7 @@
 //! user or system environment.
 use crate::language::Language;
 use crate::messages;
+use crate::platform::Platform;
 
 
 use std::collections::BTreeMap;
@@ -36,6 +37,10 @@ pub const GSDX_NOT_INSTALLED: &str = "GSdx is not installed yet";
 
 /// The reason shown when GSdx stopped and asked for a restart with CoreGS 1.1.
 pub const GSDX_RESTART_REQUESTED: &str = "GSdx stopped while playing";
+
+/// The text of a GSdx download or install asked for where GSdx does not exist (TASK-180, owner 2026-11-06): `gt4-gs.exe` is a
+/// Windows program, so Android never downloads it. The commands refuse instead of starting a transfer.
+pub const GSDX_WINDOWS_ONLY: &str = "GSdx is not available on Android.";
 
 /// The executable of a game inside the game folder (`<program folder>\game`, TASK-101: one program per game).
 pub fn game_program(game: &Game, game_dir: &Path) -> PathBuf {
@@ -168,7 +173,14 @@ pub enum SetupRenderer {
 }
 
 /// `first_game`: no game was set up before this one. `gsdx_missing`: GSdx is not installed, or is below the minimum.
-pub fn setup_renderer(settings: &Settings, first_game: bool, gsdx_missing: bool) -> SetupRenderer {
+///
+/// TASK-180 (owner, 2026-11-06): a platform without GSdx (Android) installs nothing at the end of setup. CoreGS 2.0 is inside the
+/// game there, so it is the answer whatever the stored value, the game number or the presence of `gt4-gs.exe` says: setup must
+/// never fall back to a download that cannot run.
+pub fn setup_renderer(platform: Platform, settings: &Settings, first_game: bool, gsdx_missing: bool) -> SetupRenderer {
+    if !platform.has_gsdx() {
+        return SetupRenderer::Coregs20;
+    }
     if uses_coregs20(settings) {
         SetupRenderer::Coregs20
     } else if first_game && gsdx_missing && !settings.was_chosen("renderer") {
@@ -176,6 +188,11 @@ pub fn setup_renderer(settings: &Settings, first_game: bool, gsdx_missing: bool)
     } else {
         SetupRenderer::Gsdx
     }
+}
+
+/// Whether a GSdx download or install may start here: `gt4-gs.exe` is a Windows program, so only where the platform has it.
+pub fn gsdx_installs_here(platform: Platform) -> bool {
+    platform.has_gsdx()
 }
 
 /// The message of a session GSdx cannot run: the reason, what to do, and the log folder. Shown on the home page and in
@@ -684,6 +701,25 @@ pub const STANDALONE_WHEEL_KEY: &str = "wheel_file";
 pub fn controller_environment(settings: &Settings) -> Option<String> {
     let value = settings.get("controller");
     crate::controller::PadChoice::parse(value).map(|_| value.to_string())
+}
+
+/// TASK-185: the `GT4_VIRTUAL_PAD` mode of one stored value: `always`, `off`, and `auto` for the default and for anything
+/// unrecognised (an edited settings file never takes the pad away by accident).
+pub fn virtual_pad_mode(value: &str) -> &'static str {
+    match value {
+        "always" => "always",
+        "off" => "off",
+        _ => "auto",
+    }
+}
+
+/// TASK-185: the `GT4_VIRTUAL_PAD` value at Play, from the `virtual_pad` setting of the launcher's Controls page. `auto`
+/// is the default and also what a build without the setting yet passes (the row belongs to the launcher's editor).
+pub fn virtual_pad_environment(settings: &Settings) -> &'static str {
+    if crate::settings::definition("virtual_pad").is_none() {
+        return "auto";
+    }
+    virtual_pad_mode(settings.get("virtual_pad"))
 }
 
 /// TASK-148: the SDL gamepad mappings file in the user config folder (`gamecontrollerdb.txt` format). The launcher loads

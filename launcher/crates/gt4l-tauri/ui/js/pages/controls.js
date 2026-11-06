@@ -207,6 +207,209 @@
     ]);
     content.appendChild(h("div", { class: "cx-body" }, [stage, panel]));
 
+    // ---- TASK-185: the virtual controller (Android, and the dev mock), with its layout editor ----
+    // The row the game reads through GT4_VIRTUAL_PAD (Auto / Always / Off, default Auto); the layout itself lives in
+    // `user/virtual-pad.json` and is edited full screen by js/pages/virtual-pad-editor.js. Drawn above the analog
+    // settings so a phone shows it without scrolling. Hidden when the backend says this platform has no on-screen pad.
+    var vpad = null;
+    if (GT4.features.virtualPad) {
+      vpad = buildVirtualPad();
+    }
+
+    function buildVirtualPad() {
+      var view = null;
+      var modeSlot = h("div", { class: "cx-vpad-mode" });
+      var status = h("p", { class: "cx-vpad-status", role: "status", text: "" });
+      var rows = h("div", { class: "cx-vpad-rows" });
+      var editButton = h("button", {
+        class: "btn primary small", type: "button", data: { action: "vpad-edit" },
+        on: { click: openEditor }
+      }, GT4.t("vpad.edit"));
+      var resetButton = h("button", {
+        class: "btn small", type: "button", data: { action: "vpad-reset" },
+        on: { click: confirmReset }
+      }, GT4.t("vpad.reset_default"));
+      var tipText = GT4.t("vpad.section_help");
+      var info = h("button", {
+        class: "info", type: "button", "aria-label": GT4.t("vpad.section_title"), "aria-expanded": "false",
+        on: { click: function () { GT4.ui.toggleTip(info); } }
+      }, ["i", h("span", { class: "tip", role: "tooltip" }, [h("b", { text: GT4.t("vpad.section_title") }), tipText])]);
+      var section = h("section", { class: "cx-vpad", "aria-labelledby": "cx-vpad-title" }, [
+        h("h2", { id: "cx-vpad-title" }, [GT4.t("vpad.section_title"), info]),
+        status,
+        h("div", { class: "cx-vpad-mode-row" }, [h("span", { class: "cx-vpad-k", text: GT4.t("vpad.mode") }), modeSlot]),
+        rows,
+        h("div", { class: "cx-vpad-actions" }, [editButton, resetButton])
+      ]);
+      panel.insertBefore(section, panel.querySelector(".cx-analog"));
+
+      function paintStatus() {
+        if (!view) {
+          status.textContent = "";
+          return;
+        }
+        var warn = !!view.locked || (view.notes && view.notes.length > 0);
+        if (view.locked) {
+          status.textContent = GT4.t("vpad.locked");
+        } else if (view.notes && view.notes.length) {
+          status.textContent = GT4.t("vpad.notes");
+          status.title = view.notes[0];
+        } else {
+          status.textContent = view.source === "player" ? GT4.t("vpad.source_player") : GT4.t("vpad.source_default");
+          status.title = view.path || "";
+        }
+        status.classList.toggle("is-warning", warn);
+      }
+
+      function paintMode() {
+        GT4.ui.clear(modeSlot);
+        if (!view) {
+          return;
+        }
+        modeSlot.appendChild(GT4.optionSelector({
+          id: "virtual_pad",
+          label: GT4.t("vpad.mode"),
+          options: [
+            { value: "auto", text: GT4.t("choice.virtual_pad.auto") },
+            { value: "always", text: GT4.t("choice.virtual_pad.always") },
+            { value: "off", text: GT4.t("choice.virtual_pad.off") }
+          ],
+          current: view.mode,
+          disabled: !!view.locked,
+          onChange: setMode
+        }));
+      }
+
+      function paintRows() {
+        var focused = rows.contains(document.activeElement) ? document.activeElement.getAttribute("data-setting") : null;
+        GT4.ui.clear(rows);
+        if (!view) {
+          return;
+        }
+        var context = {
+          table: { rows: [] },
+          content: rows,
+          selfDrawn: {},
+          commit: function (id, value) { return commitRow(id, value); },
+          refresh: function () { paintRows(); return Promise.resolve(); }
+        };
+        [
+          {
+            id: "virtual_pad_opacity", control: "slider", label: GT4.t("vpad.global_opacity"),
+            values: { min: 5, max: 100, step: 5, unit: "%" },
+            current: Math.round(view.layout.opacity * 100), disabled: !!view.locked
+          },
+          {
+            id: "virtual_pad_haptics", control: "toggle", label: GT4.t("vpad.haptics"),
+            values: null, current: view.layout.haptics !== false, disabled: !!view.locked
+          }
+        ].forEach(function (row) {
+          var node = GT4.settingsRows.rowNode(context, row);
+          if (node) {
+            rows.appendChild(node);
+          }
+        });
+        if (focused) {
+          var again = rows.querySelector("[data-setting=\"" + focused + "\"]");
+          if (again) {
+            again.focus({ preventScroll: true });
+          }
+        }
+      }
+
+      function paint() {
+        paintStatus();
+        paintMode();
+        paintRows();
+        editButton.disabled = !view || !!view.locked;
+        resetButton.disabled = !view || !!view.locked || !view.has_file;
+      }
+
+      function applyView(next) {
+        view = next || null;
+        paint();
+      }
+
+      function setMode(value) {
+        if (!view) {
+          return;
+        }
+        call("set_setting", { id: "virtual_pad", value: value }).then(function () {
+          view.mode = value;
+        }, function (error) {
+          GT4.ui.toast(GT4.errorText(error), true);
+          paintMode();
+        });
+      }
+
+      // A slider or a toggle on the section writes the whole layout at once (the same file the game reads).
+      function commitRow(id, value) {
+        if (!view || view.locked) {
+          return Promise.resolve();
+        }
+        var layout = JSON.parse(JSON.stringify(view.layout));
+        if (id === "virtual_pad_opacity") {
+          layout.opacity = Math.round(Number(value)) / 100;
+        } else if (id === "virtual_pad_haptics") {
+          layout.haptics = !!value;
+        }
+        return call("save_virtual_pad", { layout: layout }).then(applyView, function (error) {
+          GT4.ui.toast(GT4.errorText(error), true);
+          paintRows();
+        });
+      }
+
+      function load() {
+        return call("get_virtual_pad").then(applyView, function (error) {
+          GT4.ui.toast(GT4.errorText(error), true);
+        });
+      }
+
+      function openEditor() {
+        if (!view || view.locked) {
+          return;
+        }
+        GT4.virtualPadEditor.open({
+          view: view,
+          returnFocus: editButton,
+          onClosed: function () { load(); }
+        });
+      }
+
+      function confirmReset() {
+        if (!view || view.locked) {
+          return;
+        }
+        GT4.ui.openDialog({
+          title: GT4.t("vpad.reset_title"),
+          text: GT4.t("vpad.reset_text"),
+          buttons: [
+            { label: GT4.t("common.cancel") },
+            {
+              label: GT4.t("vpad.reset_default"), primary: true, danger: true,
+              run: function () {
+                call("reset_virtual_pad").then(function (next) {
+                  applyView(next);
+                  GT4.ui.toast(GT4.t("vpad.reset_done"));
+                }, function (error) {
+                  GT4.ui.toast(GT4.errorText(error), true);
+                });
+              }
+            }
+          ],
+          onClose: function () { root.setTimeout(paintHints, 0); }
+        });
+        GT4.ui.setHints([
+          { key: "A", label: GT4.t("controls.choose"), run: function () { GT4.nav.activate(); } },
+          { key: "B", label: GT4.t("common.cancel"), run: function () { GT4.back(); } }
+        ]);
+      }
+
+      return { load: load };
+    }
+
+    var vpadReady = vpad ? vpad.load() : Promise.resolve();
+
     function findControl(id) {
       return state.controls.filter(function (control) { return control.id === id; })[0] || null;
     }
@@ -867,7 +1070,8 @@
     setMode(state.mode);
     paintCard();
     paintHints();
-    return load().then(function () {
+    // The virtual pad section is read beside the controls, so the first paint has both.
+    return Promise.all([load(), vpadReady]).then(function () {
       if (dev.capture) {
         // Dev harness only (screenshots): start a rebind on the selected button once the page is entered.
         root.setTimeout(function () { rebind(state.selected); }, 300);

@@ -211,7 +211,7 @@ add_library(gt4_mtvu_runtime STATIC "${NATIVE}/mtvu_runtime.cpp")
 target_link_libraries(gt4_mtvu_runtime PUBLIC gt4_mtvu_journal gt4_mtvu_measure gt4_perf_probe gt4_quickfix)
 add_library(gt4_pad_mapping STATIC "${NATIVE}/pad_mapping.cpp" "${NATIVE}/pad_choice.cpp" "${NATIVE}/input_recording.cpp")
 add_library(native_host_io STATIC "${NATIVE}/host_io.cpp" "${NATIVE}/frame_clock_posix.cpp" "${NATIVE}/controls.cpp"
-    "${NATIVE}/audio_sdl.cpp")
+    "${NATIVE}/audio_sdl.cpp" "${NATIVE}/virtual_pad.cpp")
 target_compile_definitions(native_host_io PRIVATE GT4_PERF_PROBE)
 target_link_libraries(native_host_io PUBLIC gt4_pad_mapping gt4_perf_probe gt4_pacing gt4_platform gt4_sdl3)
 

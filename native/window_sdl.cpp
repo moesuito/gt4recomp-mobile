@@ -26,6 +26,7 @@
 #include "ps2/system.hpp"
 #include "race_display.hpp"
 #include "race_widescreen.hpp"
+#include "virtual_pad.hpp"
 #include "window_mode.hpp"
 #ifdef GT4_GS_STREAM_CLIENT
 #include "gs_stream/gs_stream_client.hpp"
@@ -49,6 +50,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -308,6 +310,26 @@ void drain_android_input() {
 // performance report is on (GT4_PERF=1); a tap asks for F7 (1) or F8 (2) here, from the UI thread, and the game thread
 // runs it at its next event pump, exactly as the keys. The controller never sees it.
 std::atomic<int> touch_report_request{0};
+
+// TASK-185: the on-screen virtual pad. GameActivity installs the layout and forwards touches from its UI thread; the
+// game thread reads its contribution at every VBlank, so the game keeps one pad (port 1) and never learns which of the
+// two produced a value. The layout is the player's file (user/virtual-pad.json) or the APK's default; the activity says
+// whether the pad is shown (auto with no controller, always, or off).
+gt4::vpad::Pad &virtual_pad() {
+  static gt4::vpad::Pad pad;
+  return pad;
+}
+
+// True when the layout in use is the player's file: the activity's log line names the right source when a broken file
+// fell back to the default.
+std::atomic<bool> virtual_pad_from_player{false};
+
+// The `[vpad]` lines of the game log: presses, releases, stick moves and the layout's own notes. Written on the game
+// thread, where the pad state is read, so they interleave with the other `[input]` lines.
+void flush_virtual_pad_log() {
+  for (const std::string &line : virtual_pad().take_log())
+    std::fprintf(stderr, "[vpad] %s\n", line.c_str());
+}
 #endif
 
 bool pump_messages() {
@@ -351,6 +373,11 @@ bool pump_messages() {
           if (ps2::g_options.presses.empty() && !input_player) apply_pad({});
           controller->log_devices("window focus lost", focused);
         }
+#ifdef __ANDROID__
+        // TASK-185: the pause dialog (or another window) took the touches: nothing may stay held behind it.
+        virtual_pad().release_all();
+        flush_virtual_pad_log();
+#endif
         break;
       case SDL_EVENT_JOYSTICK_ADDED:
       case SDL_EVENT_JOYSTICK_REMOVED:
@@ -476,8 +503,16 @@ void on_vblank() {
   } else if (ps2::g_options.presses.empty()) {
 #ifdef __ANDROID__
     if (controller) drain_android_input();
+    flush_virtual_pad_log();
 #endif
-    const PadState pad = controller->poll(focused, buttons);
+    const PadState physical = controller->poll(focused, buttons);
+#ifdef __ANDROID__
+    // TASK-185: the virtual pad's buttons and sticks combine with the physical pad's (buttons OR, a stick axis takes the
+    // value further from rest). The recording keeps the merged state, so a replay drives exactly what the player saw.
+    const PadState pad = gt4::vpad::merge(physical, virtual_pad().contribution());
+#else
+    const PadState pad = physical;
+#endif
     apply_pad(pad);
     input_recorder.vblank(input_vblank, pad);
     if (focused)
@@ -794,5 +829,102 @@ extern "C" JNIEXPORT void JNICALL Java_io_github_moesuito_gt4recomp_GameActivity
 extern "C" JNIEXPORT void JNICALL Java_io_github_moesuito_gt4recomp_GameActivity_nativeSetPaused(JNIEnv *, jclass,
                                                                                                    jboolean paused) {
   user_paused.store(paused == JNI_TRUE, std::memory_order_release);
+}
+
+// TASK-185: the activity hands over both layout texts (the player's file, null when there is none, and the APK's default)
+// and gets the lines to log. The pad is re-read at every game start, and this process is one game start.
+extern "C" JNIEXPORT jstring JNICALL Java_io_github_moesuito_gt4recomp_GameActivity_nativeVirtualPadLoad(
+    JNIEnv *environment, jclass, jstring player_text, jstring default_text) {
+  const auto read = [environment](jstring value) -> std::optional<std::string> {
+    if (value == nullptr)
+      return std::nullopt;
+    const char *characters = environment->GetStringUTFChars(value, nullptr);
+    if (characters == nullptr)
+      return std::nullopt;
+    std::string copy(characters);
+    environment->ReleaseStringUTFChars(value, characters);
+    return copy;
+  };
+  const std::optional<std::string> player = read(player_text);
+  const std::optional<std::string> fallback = read(default_text);
+  std::string report;
+  try {
+    if (!fallback.has_value())
+      throw gt4::vpad::LayoutError("the default layout asset is missing from the APK");
+    const gt4::vpad::LoadResult loaded = gt4::vpad::load_layout(player.has_value() ? &*player : nullptr, *fallback);
+    virtual_pad().set_layout(loaded.layout, loaded.notes);
+    virtual_pad_from_player.store(loaded.from_player, std::memory_order_release);
+    for (const std::string &line : loaded.notes)
+      report += line + "\n";
+  } catch (const std::exception &error) {
+    // No usable layout at all: the pad stays inactive and every touch is ignored, which the activity points out.
+    virtual_pad().set_layout({}, {});
+    virtual_pad_from_player.store(false, std::memory_order_release);
+    report = std::string("no usable layout, the virtual pad is off: ") + error.what() + "\n";
+  }
+  return environment->NewStringUTF(report.c_str());
+}
+
+// TASK-185: true when the layout in use is the player's file, false for the built-in default (including a broken file
+// that fell back to it): the activity's log line then names the right source.
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_github_moesuito_gt4recomp_GameActivity_nativeVirtualPadFromPlayer(JNIEnv *, jclass) {
+  return virtual_pad_from_player.load(std::memory_order_acquire) ? JNI_TRUE : JNI_FALSE;
+}
+
+// TASK-185: what the activity draws: 3 floats (element count, global opacity, haptics) then 8 per element (type, bind, x,
+// y, width, height, opacity, visible), exactly gt4::vpad::Pad::geometry.
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_io_github_moesuito_gt4recomp_GameActivity_nativeVirtualPadGeometry(JNIEnv *environment, jclass) {
+  const std::vector<float> geometry = virtual_pad().geometry();
+  jfloatArray out = environment->NewFloatArray(static_cast<jsize>(geometry.size()));
+  if (out != nullptr)
+    environment->SetFloatArrayRegion(out, 0, static_cast<jsize>(geometry.size()), geometry.data());
+  return out;
+}
+
+// TASK-185: the bind name of each element, in layout order ("cross", "left_stick", "dpad", ...): the activity picks the
+// PlayStation symbol or the button's label from it.
+extern "C" JNIEXPORT jobjectArray JNICALL
+Java_io_github_moesuito_gt4recomp_GameActivity_nativeVirtualPadBinds(JNIEnv *environment, jclass) {
+  const gt4::vpad::Layout layout = virtual_pad().layout();
+  jclass string_class = environment->FindClass("java/lang/String");
+  if (string_class == nullptr)
+    return nullptr;
+  jobjectArray out = environment->NewObjectArray(static_cast<jsize>(layout.elements.size()), string_class, nullptr);
+  if (out == nullptr)
+    return nullptr;
+  for (std::size_t index = 0; index < layout.elements.size(); ++index) {
+    const gt4::vpad::LayoutElement &element = layout.elements[index];
+    jstring name = environment->NewStringUTF(gt4::vpad::bind_name(element.type, element.bind));
+    environment->SetObjectArrayElement(out, static_cast<jsize>(index), name);
+    environment->DeleteLocalRef(name);
+  }
+  return out;
+}
+
+// TASK-185: one touch on one element. dx and dy are in -1..1 with the screen's sign (a stick reads them from where the
+// thumb landed, a d-pad from its centre); down false releases it. Any thread.
+extern "C" JNIEXPORT void JNICALL Java_io_github_moesuito_gt4recomp_GameActivity_nativeVirtualPadTouch(
+    JNIEnv *, jclass, jint element, jfloat dx, jfloat dy, jboolean down) {
+  if (element < 0)
+    return;
+  virtual_pad().touch(static_cast<std::size_t>(element), dx, dy, down == JNI_TRUE);
+}
+
+// TASK-185: the pad is shown or hidden. `reason` is the line for the game log ("shown: no controller",
+// "hidden: Xbox Wireless Controller connected"), empty for none. Hidden means no input at all, never a stuck button.
+extern "C" JNIEXPORT void JNICALL Java_io_github_moesuito_gt4recomp_GameActivity_nativeVirtualPadActive(
+    JNIEnv *environment, jclass, jboolean active, jstring reason) {
+  virtual_pad().set_active(active == JNI_TRUE);
+  if (reason != nullptr) {
+    const char *characters = environment->GetStringUTFChars(reason, nullptr);
+    if (characters != nullptr) {
+      virtual_pad().note(std::string(characters));
+      environment->ReleaseStringUTFChars(reason, characters);
+    }
+  }
+  // The activity's own lines (a controller appeared or went away) are worth showing at once, not at the next VBlank.
+  flush_virtual_pad_log();
 }
 #endif

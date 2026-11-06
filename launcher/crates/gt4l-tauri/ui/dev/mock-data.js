@@ -470,6 +470,54 @@
   }
   var analog = analogDefaults();
 
+  // TASK-185: the virtual controller. The built-in layout is android/virtual-pad/default-layout.json (the TASK-185
+  // contract's JSON); the mock keeps its own copy so the dev pages, served from ui/, need no build step. Options:
+  // ?vpad=auto|always|off (the mode), ?vpadsaved=1 (a player's file exists), ?vpadlocked=1 (a newer format is kept).
+  var DEFAULT_VIRTUAL_PAD = {
+    version: 1,
+    name: "GT4 default",
+    opacity: 0.6,
+    haptics: true,
+    elements: [
+      { id: "lstick", type: "stick", binds: "left_stick", x: 0.13, y: 0.70, size: 0.32 },
+      { id: "dpad", type: "dpad", binds: "dpad", x: 0.13, y: 0.30, size: 0.26 },
+      { id: "cross", type: "button", binds: "cross", x: 0.88, y: 0.78, size: 0.15 },
+      { id: "square", type: "button", binds: "square", x: 0.80, y: 0.66, size: 0.15 },
+      { id: "circle", type: "button", binds: "circle", x: 0.96, y: 0.66, size: 0.15 },
+      { id: "triangle", type: "button", binds: "triangle", x: 0.88, y: 0.54, size: 0.15 },
+      { id: "l1", type: "button", binds: "l1", x: 0.30, y: 0.10, size: 0.12, width: 0.16 },
+      { id: "r1", type: "button", binds: "r1", x: 0.70, y: 0.10, size: 0.12, width: 0.16 },
+      { id: "l2", type: "button", binds: "l2", x: 0.13, y: 0.10, size: 0.12, width: 0.16 },
+      { id: "r2", type: "button", binds: "r2", x: 0.87, y: 0.10, size: 0.12, width: 0.16 },
+      { id: "select", type: "button", binds: "select", x: 0.44, y: 0.92, size: 0.09, width: 0.11 },
+      { id: "start", type: "button", binds: "start", x: 0.56, y: 0.92, size: 0.09, width: 0.11 }
+    ]
+  };
+  var virtualPad = {
+    mode: query.get("vpad") || "auto",
+    layout: JSON.parse(JSON.stringify(DEFAULT_VIRTUAL_PAD)),
+    hasFile: query.get("vpadsaved") === "1",
+    locked: query.get("vpadlocked") === "1"
+  };
+  if (virtualPad.hasFile) {
+    virtualPad.layout.opacity = 0.5;
+    virtualPad.layout.elements[0].x = 0.2;
+  }
+  function virtualPadView() {
+    return {
+      mode: virtualPad.mode,
+      layout: JSON.parse(JSON.stringify(virtualPad.layout)),
+      default_layout: JSON.parse(JSON.stringify(DEFAULT_VIRTUAL_PAD)),
+      source: !virtualPad.locked && virtualPad.hasFile ? "player" : "default",
+      locked: virtualPad.locked,
+      has_file: virtualPad.hasFile,
+      notes: virtualPad.locked
+        ? ["virtual-pad.json uses layout version 2 and is kept as it is; the built-in layout is shown"]
+        : [],
+      path: "C:\\Users\\Player\\AppData\\Roaming\\GT4Recomp\\virtual-pad.json"
+    };
+  }
+
   function base(source) { return String(source).split("|")[0].trim(); }
   function familyOf(source) { return base(source).split(":")[0]; }
   function nameOf(source) { return base(source).split(":")[1] || ""; }
@@ -646,6 +694,9 @@
     snapshot.game = target ? { id: target, name: gameById(target).name } : null;
     return { setup: snapshot, game_running: gameRunning, selected_game: view.selected, language: mockLanguage,
       any_installed: view.any_installed, games: view.games,
+      // TASK-185: the dev mock is the Windows launcher with the Android screen, so the virtual controller shows for
+      // testing (the real Windows backend answers false and the Controls page has no section).
+      virtual_pad: true,
       game_files: "C:\\Program Files\\GT4Recomp\\data\\games\\" + selectedGame + "\\disc",
       migration: { running: false, item: "", bytes_done: 0, bytes_total: 0, notice: "", problem: false } };
   }
@@ -836,6 +887,10 @@
           }, 500);
         });
       case "set_setting": {
+        if (args.id === "virtual_pad") {
+          virtualPad.mode = args.value; // TASK-185: the Auto/Always/Off row on the Controls page
+          return null;
+        }
         if (args.id === "controller") {
           mockController = args.value; // TASK-148: the Controls page's controller row
           return null;
@@ -871,6 +926,20 @@
         return padStatusPayload();
       case "get_controls":
         return controlsView();
+      case "get_virtual_pad":
+        return virtualPadView();
+      case "save_virtual_pad": {
+        if (!args.layout || !Array.isArray(args.layout.elements) || !args.layout.elements.length) {
+          throw new Error("the layout has no elements");
+        }
+        virtualPad.layout = JSON.parse(JSON.stringify(args.layout));
+        virtualPad.hasFile = true;
+        return virtualPadView();
+      }
+      case "reset_virtual_pad":
+        virtualPad.layout = JSON.parse(JSON.stringify(DEFAULT_VIRTUAL_PAD));
+        virtualPad.hasFile = false;
+        return virtualPadView();
       case "capture_binding":
         return captureBinding();
       case "cancel_capture":

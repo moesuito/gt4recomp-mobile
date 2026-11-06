@@ -85,6 +85,14 @@ android {
     kotlinOptions {
         jvmTarget = "1.8"
     }
+    sourceSets {
+        getByName("main") {
+            // TASK-185: the virtual pad's default layout ships byte-identical from the repository
+            // (`android/virtual-pad/default-layout.json`), so the app and the game read one file. Its folder is the APK's
+            // assets root: the game activity opens "default-layout.json" (GameActivity.loadVirtualPad).
+            assets.srcDir(file("../../../../../../android/virtual-pad"))
+        }
+    }
     buildFeatures {
         buildConfig = true
     }

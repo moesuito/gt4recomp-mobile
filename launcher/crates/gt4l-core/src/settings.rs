@@ -192,6 +192,13 @@ const VERIFY_CHOICES: &[Choice] = &[
 
 const TOGGLE: Kind = Kind::Toggle;
 
+/// TASK-185: the on-screen controller on Android. The game reads the value from `GT4_VIRTUAL_PAD`.
+const VIRTUAL_PAD_CHOICES: &[Choice] = &[
+    Choice { value: "auto", label: "Auto", selectable: true },
+    Choice { value: "always", label: "Always", selectable: true },
+    Choice { value: "off", label: "Off", selectable: true },
+];
+
 /// Every user setting, in display order. Ids are the TOML keys.
 pub const SETTINGS: &[SettingDef] = &[
     SettingDef {
@@ -215,6 +222,19 @@ pub const SETTINGS: &[SettingDef] = &[
         kind: TOGGLE,
         // On by default since the owner's rc14 test (2026-11-04).
         default: "on",
+        connected: true,
+    },
+    SettingDef {
+        // TASK-185: drawn by the Controls page (the "Virtual controller" section), never by the General tab
+        // (`model::settings_table_versioned` leaves it out of the table like the controller row above).
+        id: "virtual_pad",
+        page: Page::General,
+        group: "Controls",
+        title: "Virtual controller",
+        info: "The on-screen controller for a phone. Auto shows it only while no physical controller is connected; \
+               Always shows it even with one; Off never shows it. Its layout is edited on the Controls page.",
+        kind: Kind::Choice(VIRTUAL_PAD_CHOICES),
+        default: "auto",
         connected: true,
     },
     SettingDef {
@@ -738,6 +758,20 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_virtual_pad_row_takes_auto_always_and_off_only() {
+        let definition = definition("virtual_pad").expect("the virtual pad row");
+        assert_eq!(definition.default, "auto");
+        assert_eq!(definition.kind, Kind::Choice(VIRTUAL_PAD_CHOICES));
+        assert!(definition.connected);
+        for value in ["auto", "always", "off"] {
+            assert_eq!(validate(definition, value).as_deref(), Ok(value), "{value}");
+        }
+        for value in ["on", "never", "Always", ""] {
+            assert!(validate(definition, value).is_err(), "{value:?} is not a virtual pad mode");
+        }
+    }
 
     #[test]
     fn the_language_setting_takes_auto_and_the_listed_languages_only() {

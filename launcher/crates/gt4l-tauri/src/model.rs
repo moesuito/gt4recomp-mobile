@@ -281,6 +281,9 @@ fn settings_table_versioned(
             || definition.id == "frame_rate"
             || definition.id == "present_thread"
             || definition.id == "controller"
+            // TASK-185: the virtual pad row is drawn by the Controls page's own section (like the controller row),
+            // with the layout editor's state, never by the General tab.
+            || definition.id == "virtual_pad"
             || !platform.offers(definition.id)
         {
             continue;
@@ -1717,6 +1720,22 @@ mod table_tests {
         assert_eq!(view["locked"], false);
         assert_eq!(stick_setting("rstick_deadzone"), Some(Stick::Right));
         assert_eq!(stick_setting("l2_deadzone"), None);
+    }
+
+    #[test]
+    fn the_virtual_pad_row_is_drawn_by_the_controls_page_only() {
+        // TASK-185: the row is not on General (the Controls page draws its own section) and is not an analog row.
+        let table = settings_table(&Settings::default(), &Controls::default());
+        assert!(table["rows"].as_array().unwrap().iter().all(|row| row["id"] != "virtual_pad"), "on the table");
+        let view = controls_view(&Settings::default(), &Controls::default(), false);
+        assert!(view["triggers"].as_array().unwrap().iter().all(|row| row["id"] != "virtual_pad"), "in the analog rows");
+        // The definition exists, so the page can store the mode with set_setting.
+        let definition = gt4l_core::settings::definition("virtual_pad").expect("the row exists");
+        assert_eq!(definition.default, "auto");
+        assert_eq!(
+            gt4l_core::settings::validate(definition, "always").unwrap(),
+            "always"
+        );
     }
 
     #[test]

@@ -15,6 +15,7 @@ use gt4l_core::gpu::GpuDevice;
 use gt4l_core::gs_release::Step;
 use gt4l_core::launch::{self, SetupRenderer};
 use gt4l_core::paths::{self, DataDirs};
+use gt4l_core::platform::Platform;
 use gt4l_core::shader_prepare::PrepareOutcome;
 use gt4l_core::{display, settings};
 use gt4l_core::LAUNCHER_VERSION;
@@ -496,12 +497,18 @@ fn prepare_renderer(
     first_game: bool,
 ) -> String {
     let gsdx_missing = gt4l_core::gs_release::needs_install(&dirs.renderer_root());
-    let plan = launch::setup_renderer(&lock(shared).config.settings, first_game, gsdx_missing);
+    let plan = launch::setup_renderer(Platform::current(), &lock(shared).config.settings, first_game, gsdx_missing);
     let mut choice = String::new();
     match plan {
         SetupRenderer::Coregs20 => {
             lock(shared).setup_run.renderer_choice = settings::CORE_GS_20.into();
-            state::log(dirs, "setup: CoreGS 2.0 is the renderer; nothing to install");
+            // TASK-180 (owner, 2026-11-06): on Android this is the whole renderer story, there is nothing to look for and no
+            // GSdx to download; the line says which of the two reasons it is.
+            state::log(dirs, if Platform::current().has_gsdx() {
+                "setup: CoreGS 2.0 is the renderer; nothing to install"
+            } else {
+                "setup: CoreGS 2.0 is the only renderer here; GSdx is a Windows program and is not downloaded"
+            });
             return String::new();
         }
         SetupRenderer::TryCoregs20 => {

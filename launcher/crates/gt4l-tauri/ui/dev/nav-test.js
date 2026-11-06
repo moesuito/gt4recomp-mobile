@@ -79,6 +79,14 @@ function startNavTest(root) {
   expect("stick full up scrolls -18 px", root.GT4.input.stickScroll(-1), -18);
   expect("stick just past the deadzone scrolls a little", root.GT4.input.stickScroll(0.25) > 0 && root.GT4.input.stickScroll(0.25) < 2, true);
 
+  // A click from the keyboard, the pad or assistive technology has no click count; a mouse, finger or pen click has one.
+  // An option row only steps on the first kind (TASK-193).
+  expect("a keyboard or assistive click steps an option row", root.GT4.input.stepsFromActivation(0), true);
+  expect("a click with no count at all steps an option row", root.GT4.input.stepsFromActivation(undefined), true);
+  expect("a mouse click does not step an option row", root.GT4.input.stepsFromActivation(1), false);
+  expect("a finger tap does not step an option row", root.GT4.input.stepsFromActivation(1), false);
+  expect("a double click does not step an option row", root.GT4.input.stepsFromActivation(2), false);
+
   // Slider from a touch position: 7 px thumb inset is applied by the caller; here the track is plain.
   expect("touch at the left end gives min", root.GT4.input.valueFromPointer(0, 0, 100, 1, 12, 1), 1);
   expect("touch at the right end gives max", root.GT4.input.valueFromPointer(100, 0, 100, 1, 12, 1), 12);
@@ -372,6 +380,60 @@ function startNavTest(root) {
   expect("no session: unknown", wm.received(null).value + "/" + wm.received({ found: false }).reason, "unknown/no_session");
   expect("a summary that reached the wheel: yes", wm.received({ found: true, received: "yes", reason: "summary" }).value, "yes");
   expect("the main device is the one the game drives", wm.mainDevice({ primary: 9, devices: [{ id: 5, role: "other_wheel" }, { id: 9, role: "wheel" }] }).id, 9);
+
+  // TASK-185: the virtual controller layout model (js/virtual-pad-model.js), in the contract's screen fractions.
+  var VP = root.GT4.virtualPadModel;
+  var VP_LAYOUT = { version: 1, name: "t", opacity: 0.6, haptics: true, elements: [
+    { id: "lstick", type: "stick", binds: "left_stick", x: 0.13, y: 0.70, size: 0.32 },
+    { id: "dpad", type: "dpad", binds: "dpad", x: 0.13, y: 0.30, size: 0.26 },
+    { id: "cross", type: "button", binds: "cross", x: 0.88, y: 0.78, size: 0.15 },
+    { id: "square", type: "button", binds: "square", x: 0.80, y: 0.66, size: 0.15, opacity: 0.4, visible: false },
+    { id: "l1", type: "button", binds: "l1", x: 0.30, y: 0.10, size: 0.12, width: 0.16 },
+    { id: "l2", type: "button", binds: "l2", x: 0.13, y: 0.10, size: 0.12, width: 0.16 },
+    { id: "select", type: "button", binds: "select", x: 0.44, y: 0.92, size: 0.09, width: 0.11 }
+  ] };
+  function vp(id) { return VP.find(VP_LAYOUT, id); }
+  function vpOf(layout, id) { return VP.find(layout, id); }
+  function vpClose(a, b) { return Math.abs(a - b) < 0.0001; }
+  expect("a square element is square on a square screen", vpClose(VP.rect(vp("cross"), 1).width, 0.15), true);
+  expect("a square element is narrower in x on a wide screen", vpClose(VP.rect(vp("cross"), 20 / 9).width, 0.15 / (20 / 9)), true);
+  expect("a wide button keeps its own width", vpClose(VP.rect(vp("l1"), 20 / 9).width, 0.16), true);
+  var crossBox = VP.rect(vp("cross"), 20 / 9);
+  expect("the rect is the element's box", vpClose(crossBox.y0, 0.78 - 0.075) && vpClose(crossBox.height, 0.15), true);
+  expect("move keeps an element inside the left edge", vpClose(vpOf(VP.move(VP_LAYOUT, "lstick", -2, 0, 20 / 9), "lstick").x, 0.32 / (2 * 20 / 9)), true);
+  expect("move keeps an element inside the right edge", vpClose(vpOf(VP.move(VP_LAYOUT, "cross", 2, 0, 20 / 9), "cross").x, 1 - 0.15 / (2 * 20 / 9)), true);
+  expect("move keeps an element inside the bottom edge", vpClose(vpOf(VP.move(VP_LAYOUT, "lstick", 0, 2, 20 / 9), "lstick").y, 0.84), true);
+  expect("a wide button is clamped by its own half width", vpClose(vpOf(VP.move(VP_LAYOUT, "l2", -2, 0, 20 / 9), "l2").x, 0.08), true);
+  expect("resizing scales the size and the width of a wide button", vpClose(vpOf(VP.resize(VP_LAYOUT, "l1", 2, 20 / 9), "l1").size, 0.24) &&
+    vpClose(vpOf(VP.resize(VP_LAYOUT, "l1", 2, 20 / 9), "l1").width, 0.32), true);
+  expect("setSize keeps the shape of a wide button", vpClose(vpOf(VP.setSize(VP_LAYOUT, "l1", 0.24, 20 / 9), "l1").width, 0.32), true);
+  expect("setWidth changes only the width", vpClose(vpOf(VP.setWidth(VP_LAYOUT, "l1", 0.5, 20 / 9), "l1").width, 0.5) &&
+    vpClose(vpOf(VP.setWidth(VP_LAYOUT, "l1", 0.5, 20 / 9), "l1").size, 0.12), true);
+  expect("a square button has no width to set", vpOf(VP.setWidth(VP_LAYOUT, "cross", 0.5, 20 / 9), "cross").width, undefined);
+  expect("the size stays above its minimum", vpClose(vpOf(VP.setSize(VP_LAYOUT, "cross", 0.001, 20 / 9), "cross").size, VP.MIN_SIZE), true);
+  expect("the size stays below its maximum", vpClose(vpOf(VP.setSize(VP_LAYOUT, "l1", 5, 20 / 9), "l1").size, VP.MAX_SIZE), true);
+  same("opacity is clamped to 0..1", [VP.setOpacity(VP_LAYOUT, "square", 1.5).elements[3].opacity, VP.setOpacity(VP_LAYOUT, "square", -1).elements[3].opacity], [1, 0]);
+  same("showing an element removes the hidden flag", "visible" in vpOf(VP.setVisible(VP_LAYOUT, "square", true), "square"), false);
+  same("hiding an element writes the hidden flag", vpOf(VP.setVisible(VP_LAYOUT, "square", false), "square").visible, false);
+  expect("the grid snaps to 2%", Math.round(VP.snapValue(0.147, VP.GRID) * 1000) / 1000 + "/" + Math.round(VP.snapValue(0.151, VP.GRID) * 1000) / 1000, "0.14/0.16");
+  expect("the default layout's L2 touches but does not overlap the F7 corner", VP.overlapsReserved(VP_LAYOUT, 20 / 9).length, 0);
+  expect("an element moved onto the corner is reported", JSON.stringify(VP.overlapsReserved(VP.move(VP_LAYOUT, "l2", -0.05, -0.05, 20 / 9), 20 / 9)), JSON.stringify(["l2"]));
+  expect("the aspect list is 20:9, 16:9 and 21:9", VP.ASPECTS.map(function (a) { return a.id; }).join("|"), "20:9|16:9|21:9");
+  expect("the ratio and the id of a shape agree", VP.ratioOf("16:9") + "|" + VP.aspectIdOf(21 / 9) + "|" + VP.aspectIdOf(1), (16 / 9) + "|21:9|20:9");
+  expect("a valid layout has no problem", VP.problems(VP_LAYOUT).length, 0);
+  var vpDuplicate = VP.clone(VP_LAYOUT);
+  vpDuplicate.elements[1].id = "lstick";
+  expect("a duplicate element id is a problem", VP.problems(vpDuplicate)[0].code, "duplicate_id");
+  var vpBadBind = VP.clone(VP_LAYOUT);
+  vpBadBind.elements[0].binds = "dpad";
+  expect("a stick bound to the D-pad is a problem", VP.problems(vpBadBind)[0].code, "binds");
+  var vpOut = VP.clone(VP_LAYOUT);
+  vpOut.elements[0].x = 1.2;
+  expect("an element off the screen is a problem", VP.problems(vpOut)[0].code, "x");
+  expect("the element names come from the Controls page", VP.nameOf(vp("lstick")) + "/" + VP.nameOf(vp("cross")) + "/" + VP.nameOf(vp("dpad")), "Left stick/Cross/D-pad");
+  var vpCopy = VP.clone(VP_LAYOUT);
+  vpCopy.elements[0].x = 0.5;
+  expect("clone is a deep copy", vp("lstick").x, 0.13);
 
   function run() {
     var list = document.getElementById("results");

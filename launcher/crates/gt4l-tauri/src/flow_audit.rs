@@ -2036,6 +2036,64 @@ fn the_wheel_page_writes_a_dfp_file_the_game_reads() {
     let _ = fs::remove_dir_all(root);
 }
 
+/// TASK-185: the Controls page's command bodies in the page's order: the built-in layout with no file; the editor's
+/// Save writes `user/virtual-pad.json` atomically; a layout the contract refuses is refused and keeps the file; Reset
+/// deletes it and the built-in layout is back.
+#[test]
+fn the_virtual_pad_editor_writes_the_layout_the_game_reads() {
+    let root = scratch("virtual-pad-page");
+    let dirs = DataDirs::new(root.join("data"));
+    let pins = Pins::embedded().expect("embedded pins");
+    let shared = launch(&dirs, &pins);
+    let path = gt4l_core::virtual_pad::layout_path(&lock(&shared).user_dirs);
+    let first = commands::get_virtual_pad_of(&shared).unwrap();
+    assert_eq!(first["source"], json!("default"));
+    assert_eq!(first["mode"], json!("auto"));
+    assert_eq!(first["locked"], json!(false));
+    assert_eq!(first["layout"]["elements"].as_array().unwrap().len(), 12);
+    assert_eq!(first["default_layout"]["elements"].as_array().unwrap().len(), 12);
+    assert!(!path.exists(), "nothing is written before a change");
+
+    let mut layout = first["layout"].clone();
+    layout["name"] = json!("Owner phone");
+    layout["opacity"] = json!(0.3);
+    layout["elements"][0]["x"] = json!(0.5);
+    layout["elements"][1]["visible"] = json!(false);
+    let saved = commands::save_virtual_pad_of(layout, &shared).unwrap();
+    assert_eq!(saved["source"], json!("player"));
+    assert_eq!(saved["has_file"], json!(true));
+    assert!(path.exists());
+    let on_disk: Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(on_disk["version"], json!(1));
+    assert_eq!(on_disk["name"], json!("Owner phone"));
+    assert_eq!(on_disk["opacity"], json!(0.3));
+    assert_eq!(on_disk["elements"][1]["visible"], json!(false));
+    assert!(!path.with_extension("json.tmp").exists(), "the temporary file is gone");
+
+    // A layout the contract refuses (a stick bound to the D-pad) is refused and the file stays as it was.
+    let before = fs::read_to_string(&path).unwrap();
+    let mut bad = saved["layout"].clone();
+    bad["elements"][0]["binds"] = json!("dpad");
+    let error = commands::save_virtual_pad_of(bad, &shared).expect_err("a stick cannot bind dpad");
+    assert!(error.contains("binds"), "{error}");
+    assert_eq!(fs::read_to_string(&path).unwrap(), before);
+
+    // The player's file is read back by the next start.
+    drop(shared);
+    let shared = launch(&dirs, &pins);
+    let reopened = commands::get_virtual_pad_of(&shared).unwrap();
+    assert_eq!(reopened["source"], json!("player"));
+    assert_eq!(reopened["layout"]["name"], json!("Owner phone"));
+
+    // Reset deletes the player's file; the built-in layout is back, and a second reset says there was none.
+    let reset = commands::reset_virtual_pad_of(&shared).unwrap();
+    assert_eq!(reset["source"], json!("default"));
+    assert_eq!(reset["has_file"], json!(false));
+    assert!(!path.exists());
+    assert_eq!(commands::reset_virtual_pad_of(&shared).unwrap()["has_file"], json!(false));
+    let _ = fs::remove_dir_all(root);
+}
+
 /// TASK-181: a `mode = "pad"` wheel.toml (the removed 1.2.x bridge, which the game refuses) is migrated when the launcher
 /// starts: written again as a Driving Force Pro file with its bindings.
 #[test]

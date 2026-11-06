@@ -103,6 +103,109 @@ The private ARMSX2 GS work now has its own source-only repository, `moesuito/gt4
 - **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionCode **103001502**, 227,015,104 bytes, sha256
   `b86066309d52f093864f49af9c01052b6f33e8a1dfb6c65f5c6fe32ab1207c32`, owner's release key, with `libgt4`,
   `libgt4spec2` and `libgt4gs` in `symbols/`. The second library adds ~83 MB to the APK.
+## TASK-180 integration: the virtual pad, the arrows-only rows and no PC GSdx on Android (2026-11-06, branch `task/180-android-emulator`)
+
+The Android branch now carries both halves of TASK-185, TASK-193's pointer rule and the owner's "no PC GSdx on Android".
+
+- **Merges** (`b63cb6c1` backend, `8bdf95b1` editor, both forked at 224f5460): real merges with both sides kept. The only
+  conflicts were `docs/STATUS.md` and `docs/journal/2026-11-06.md`, where each branch added its own section; both sections
+  stay, and the editor's "not merged" lines now record the merge. The editor's settings row and the backend's
+  `GT4_VIRTUAL_PAD` are the same key, so the merge needed no code glue.
+- **Contract, checked on the merged branch:** `[settings] virtual_pad` (Auto default) → `virtual_pad_environment` →
+  `GT4_VIRTUAL_PAD` in the Android Play plan; `android/virtual-pad/default-layout.json` is one file (sha256
+  `8357e505…`) that the APK packages as `assets/default-layout.json` and the launcher `include_str!`s; and the editor
+  writes the file the game reads, `/data/user/0/<package>/user/virtual-pad.json`, confirmed by the game's own emulator log
+  line (it also tries the external `files/user` copy).
+- **TASK-193 by hand** (its UI commit is `83f67bdc` on `release/1.3.0-rc15`): the cherry-pick conflicted in
+  `ui/css/app.css` and `ui/dev/README.md` only, because this branch has no rc15 Wheel-page spacing. The Wheel-card rules
+  were adapted to this branch (`58%` / `48%`, the `.is-tip` line kept) and everything else applied as written:
+  `GT4.input.stepsFromActivation(detail)`, a row that steps only when the click has no click count, arrows that keep their
+  24 px drawing with a 32 px (mouse) / 44 px (touch) invisible hit area behind a `::after` ring, and labels that wrap
+  between words only. The 24 focus checks and 5 nav cases came over.
+- **No PC GSdx on Android** (owner): `gt4l_core::launch::setup_renderer` now takes the `Platform` and answers Coregs20 on
+  one without GSdx, so setup never falls back to the `gt4-gs.exe` download; `launch::gsdx_installs_here` guards
+  `updates::install_renderer` (the single transfer path), `download_gsdx`, `install_gsdx_archive`, `gsdx_download_needed`
+  and `coregs20_offer` (Play's "GSdx is missing" prompt); and the setup page leaves the renderer step out on Android. The
+  Renderer row was already absent from the Android settings table (TASK-180 test5); the emulator screenshot shows the
+  Graphics page with no such row. Windows is unchanged.
+- **Checks:** `cargo test --workspace` **799 passed, 0 failed, 9 ignored** (two new launch-contract tests, one of them
+  `android_never_installs_gsdx_at_the_end_of_setup`); focus checks **427/427** en-US and **434/434** pt-BR, nav-test
+  **293/293**, locale parity inside the focus checks (no new keys); the `native_virtual_pad` fixture **9/9 groups PASS**
+  (built on its own, `build/run-vpad-fixture.cmd`). Evidence: `build/evidence/t180-integrate/`.
+- **Emulator:** the installed APK is `1.3.0-android-test6`, which predates this branch's launcher changes (its UI is
+  embedded in the Rust library), so it opens (home, Settings > Gráficos without a Renderer row) but cannot show the new
+  Controls section. Opening the Controls page on this emulator killed the emulator process 4 times out of 4 (the host's
+  SwiftShader/lavapipe setup, before any of this branch's code ran); the Controls section and the Android setup page are
+  shown from the dev mock instead, at 2400x1080, both languages.
+
+## TASK-185 backend: the Android on-screen virtual pad (2026-11-06)
+
+Owner (2026-11-06): a first-hand virtual controller for GT4 on a phone, shown only while no physical controller is
+connected. Two agents share one layout-file contract: this is the game side (branch `task/185-virtual-pad-backend` from
+`task/180-android-emulator` at 224f5460); the launcher editor is the other.
+
+- **Contract.** `<user>/virtual-pad.json` (the launcher's user folder, `/data/data/<package>/user`, which is where
+  `config/settings.toml` lives; the external `files/user` folder is tried too), else
+  `android/virtual-pad/default-layout.json` — byte-identical to the contract and packaged as the APK asset
+  `assets/default-layout.json` through a Gradle `assets.srcDir`. `GT4_VIRTUAL_PAD=auto|always|off` comes from the
+  `virtual_pad` setting at Play (`gt4l_core::launch::virtual_pad_environment`, `auto` when the setting is absent; it lives
+  in `settings.toml`'s one `[settings]` table — the contract text said `[controls]`, but the game only sees the variable).
+  The file is re-read at every start.
+- **Layout model, separate from the input mapping** (`native/virtual_pad.{hpp,cpp}`, pure C++): a strict JSON reader with
+  line/column errors, the validation (an unknown `binds`, type or geometry skips that element with a log line; an unusable
+  file falls back to the default and says why), the stick maths (offset from where the thumb landed, circular clamp, dead
+  zone 0.08, 128 at rest, PS2 Y up), the d-pad directions and the merge with the physical pad. A later task swaps layouts
+  per game context through `Pad::set_layout`; nothing in the input path changes.
+- **Input path.** The overlay sends `nativeVirtualPadTouch(element, dx, dy, down)`; the pad turns it into buttons at full
+  pressure (255) and the two analog bytes. `on_vblank` merges it into the state `ControllerInput` polled
+  (`gt4::vpad::merge`: buttons OR, pressure max, each axis the value further from rest) and applies it once through
+  `ps2::set_pad_buttons/axis/pressure`, so the game still reads one pad (port 1) and an input recording keeps the merged
+  state.
+- **Overlay** (`VirtualPadView.kt`, added before the F7 button so the button stays on top): outlined shapes with the
+  PlayStation symbols on the face buttons, the global and per-element opacity, multi-touch, a knob that follows the thumb
+  and recentres, light haptics when the layout asks.
+- **Visibility** (`GameActivity.kt`): `auto` follows `InputManager.InputDeviceListener` (hot-plug and the state at start),
+  `always` ignores it, `off` never builds the overlay; a hidden pad releases everything it held. Each change logs
+  `virtual pad shown: no controller` / `virtual pad hidden: <name> connected` in logcat and `[vpad] ...` in the game log,
+  together with `[vpad] cross down` and `[vpad] lstick x=255 y=128` from the game thread.
+- **Tests.** `native_virtual_pad` CTest (the shipped default's 12 elements, refused files, six kinds of skipped element,
+  clamping, player/default/fallback, stick maths, d-pad, merge, live pad, geometry) passes; the launch contract test
+  `the_virtual_pad_mode_is_a_stored_choice_with_auto_as_default` passes (34/34 in that suite).
+- **Emulator evidence** (`build/evidence/t185/`): the pad over the game picture with no controller, held Cross and moved
+  stick (`[vpad]` lines), an injected device event hiding it, a two-element player layout honoured and a broken one
+  falling back, and F7 working above the overlay. The emulator's software Vulkan on a shared host ran the guest at about
+  0.4 VBlanks/s (F8: `EE gs_drain=2767 ms/frame`), so no guest screen that reacts to input was reached; on the owner's
+  phone the same path runs at the 60 VBlanks/s of TASK-180.
+
+## TASK-185 launcher: the virtual controller and its layout editor (2026-11-06; branch `task/185-virtual-pad-editor`)
+
+The owner (2026-11-06) asked for a first-hand on-screen controller on the phone, shown only while no physical controller is
+connected, with a simple way to move and resize its buttons in the launcher ("like ARMSX2 does"). Two agents build it in
+parallel; this branch is the launcher side, and the only interface between them is the contract now written in
+[docs/CONTROLS.md](CONTROLS.md#virtual-controller-layout-task-185-android).
+
+- **Contract (version 1).** The player's layout is `user/virtual-pad.json`: `x`/`y` are the element's centre in screen
+  fractions, `size` its height (fraction of the screen height), the optional `width` its width (fraction of the screen
+  *width*; absent = square). The built-in layout is `android/virtual-pad/default-layout.json`, byte-identical for both
+  agents (the launcher compiles it in). The mode is the `virtual_pad` setting (Auto default / Always / Off, the game gets
+  it as `GT4_VIRTUAL_PAD`). The setting is stored in the `[settings]` table like every launcher setting; the contract text
+  called it `[controls]`, but `settings.toml` has one settings table and the backend reads the environment variable, so the
+  interface itself is unchanged.
+- **Controls page, "Virtual controller" section** (shown where the backend says the game draws the pad — Android — and in
+  the Windows dev mock): mode row, Edit layout, Reset to default, global opacity and vibration, and a status line.
+- **Editor.** Full-screen landscape canvas over a dimmed race scene, 20:9 / 16:9 / 21:9 previews; drag to move, pinch or
+  the corner handle to resize, tap to select; size, width, opacity and shown/hidden per element; global opacity, vibration
+  and snap to grid; Undo / Reset / Save / Cancel; the F7 corner is reserved and warns on overlap; elements are clamped
+  inside the screen; coordinates stay fractions. Keyboard and pad: Tab or the D-pad and A select, arrows or the left stick
+  move, Shift+arrow or LB/RB resize, X undo, Y reset, B back.
+- **Rust.** `gt4l-core::virtual_pad` (load, validate, atomic save, reset, a newer file kept and locked) and the
+  `get_virtual_pad` / `save_virtual_pad` / `reset_virtual_pad` commands, in `commands.list`, `capabilities/default.json`
+  and both handlers. Tests: 17 in the core plus the launcher's flow-audit round trip and the table rule.
+- **Checks.** `cargo test --workspace` 797 passed, 0 failed (gt4l-core 311, gt4l-tauri lib 150). Focus checks 401/401
+  (en-US) and 408/408 (pt-BR); nav-test 288/288. Screenshots in `build/evidence/t185-editor/` (the section and the editor,
+  both languages, 2400x1080 and 1366x768).
+- **Merged with the backend** (2026-11-06): the in-game overlay and `GT4_VIRTUAL_PAD` at Play came from
+  `task/185-virtual-pad-backend`; the two sides meet on the layout file, its mode and the environment variable.
 ## TASK-180b: Spec II on Android — the black picture and the 3.2 s frames were the missing S7b IOP rule (2026-11-06)
 
 Spec II in the emulator stayed black with `gif bytes/frame: path1=0 path2=0 path3=0` and `run_due_events=3248 ms/frame`.

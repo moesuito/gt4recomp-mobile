@@ -14,6 +14,7 @@ use gt4l_core::gs_release::{self, Step};
 use gt4l_core::language::Language;
 use gt4l_core::launch;
 use gt4l_core::messages;
+use gt4l_core::platform::Platform;
 use gt4l_core::settings::{self, Settings};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, State};
@@ -55,9 +56,13 @@ pub fn run(home_ready: bool, installed: bool, install: &mut dyn FnMut() -> Resul
     }
 }
 
-/// `gsdx_download_needed()`: whether choosing GSdx now needs a download. Before setup it does not: setup installs it.
+/// `gsdx_download_needed()`: whether choosing GSdx now needs a download. Before setup it does not: setup installs it. On a
+/// platform without GSdx (Android, TASK-180) the answer is always no: there is no row to choose and no program to fetch.
 #[tauri::command]
 pub fn gsdx_download_needed(shared: State<'_, Shared>) -> bool {
+    if !launch::gsdx_installs_here(Platform::current()) {
+        return false;
+    }
     let state = lock(shared.inner());
     needs_install(state.home_ready(), !gt4l_core::gs_release::needs_install(&state.dirs.renderer_root()))
 }
@@ -73,6 +78,11 @@ pub fn download_event(step: Step) -> Value {
 /// `download_gsdx()`: installs GSdx, with `gsdx-download` events for the dialog. An error is the notice the dialog shows.
 #[tauri::command(async)]
 pub fn download_gsdx(app: AppHandle, shared: State<'_, Shared>) -> Result<(), String> {
+    // TASK-180 (owner, 2026-11-06): the download never starts where GSdx does not exist. The page does not offer it there
+    // either; this is the guard behind that.
+    if !launch::gsdx_installs_here(Platform::current()) {
+        return Err(launch::GSDX_WINDOWS_ONLY.to_string());
+    }
     let dirs = lock(shared.inner()).dirs.clone();
     updates::install_renderer(&dirs, &mut |step| {
         let _ = app.emit("gsdx-download", download_event(step));
@@ -96,10 +106,9 @@ pub async fn install_gsdx_archive(app: AppHandle, shared: State<'_, Shared>) -> 
     };
     tauri::async_runtime::spawn_blocking(move || {
         // TASK-180: GSdx (gt4-gs.exe) is Windows-only; Android has CoreGS 2.0 alone.
-        #[cfg(target_os = "android")]
-        if true {
+        if !launch::gsdx_installs_here(Platform::current()) {
             let _ = (&app, &dirs);
-            return Err("GSdx is not available on Android.".to_string());
+            return Err(launch::GSDX_WINDOWS_ONLY.to_string());
         }
         let picked = app
             .dialog()
@@ -135,6 +144,11 @@ fn card_runs_coregs20(settings: &Settings, language: Language) -> bool {
 /// 2.0 already chosen), and when there is no such card: the plain "GSdx is not installed yet" message then stays.
 #[tauri::command(async)]
 pub fn coregs20_offer(shared: State<'_, Shared>) -> bool {
+    // TASK-180 (owner, 2026-11-06): Play's "GSdx is missing" offer belongs to the PC alone. Android always plays with CoreGS
+    // 2.0, so it never asks and never shows a GSdx download.
+    if !launch::gsdx_installs_here(Platform::current()) {
+        return false;
+    }
     let (settings, renderer_root, language) = {
         let state = lock(shared.inner());
         (state.config.settings.clone(), state.dirs.renderer_root(), state::language_of(&state))

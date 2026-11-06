@@ -150,6 +150,11 @@ fn check_with(
 
 /// Installs the newest gt4-gs (first install or update). Records the version in `version.json`.
 pub fn install_renderer(dirs: &DataDirs, progress: &mut dyn FnMut(Step)) -> Result<Outcome, String> {
+    // TASK-180 (owner, 2026-11-06): GSdx is a Windows program, so no platform without it starts the transfer. Setup, the
+    // Settings dialog and a stored choice all pass through here; refusing at the one place means none of them can fetch it.
+    if !gt4l_core::launch::gsdx_installs_here(gt4l_core::platform::Platform::current()) {
+        return Err(gt4l_core::launch::GSDX_WINDOWS_ONLY.to_string());
+    }
     let _serial = RENDERER_INSTALL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     // Installs and updates always write the data folder's root; a renderer read from elsewhere is left as it is.
     let root = dirs.renderer_install_root();

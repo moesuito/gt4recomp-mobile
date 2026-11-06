@@ -228,6 +228,8 @@ pub fn app_state_of(state: &AppState) -> Value {
         "platform": Platform::current().name(),
         // TASK-180 test3 (owner): the Wheel page is Windows only; Android offers pads only.
         "wheel": Platform::current().offers_wheel_page(),
+        // TASK-185: the on-screen pad and its layout editor exist on the phone, where the game draws them.
+        "virtual_pad": Platform::current().offers_virtual_pad(),
         "games": games::GAMES.iter().map(|game| game_row(state, game)).collect::<Vec<_>>(),
         "migration": {
             "running": state.migration.running,
@@ -1074,6 +1076,74 @@ pub fn reset_all_bindings_of(shared: &Shared) -> Result<Value, String> {
     let language = state::language_of(&state);
     state.controls_status = messages::text("controls.defaults_restored", language).to_string();
     Ok(controls_view(&state))
+}
+
+// The virtual controller (TASK-185): its settings row and the layout file of the on-screen pad ---------------------
+
+/// The view of the virtual pad page: the Auto/Always/Off mode, the player's layout or the built-in one, the built-in
+/// layout itself (the editor's Reset), and why the player's file was not used (`notes`). `locked` means the file comes
+/// from a newer launcher and must be kept as it is.
+fn virtual_pad_view(state: &AppState) -> Value {
+    let path = gt4l_core::virtual_pad::layout_path(&state.user_dirs);
+    let loaded = gt4l_core::virtual_pad::load(&path);
+    json!({
+        "mode": state.config.settings.get("virtual_pad"),
+        "layout": loaded.layout,
+        "default_layout": gt4l_core::virtual_pad::default_layout(),
+        "source": loaded.source,
+        "locked": loaded.locked,
+        "has_file": path.exists(),
+        "notes": loaded.notes,
+        "path": path.display().to_string(),
+    })
+}
+
+/// `get_virtual_pad()`: the Controls page's "Virtual controller" section and the layout editor.
+#[tauri::command]
+pub fn get_virtual_pad(shared: State<'_, Shared>) -> Result<Value, String> {
+    get_virtual_pad_of(shared.inner())
+}
+
+pub fn get_virtual_pad_of(shared: &Shared) -> Result<Value, String> {
+    Ok(virtual_pad_view(&lock(shared)))
+}
+
+/// `save_virtual_pad({layout})`: the editor's Save. The layout is checked with the contract's rules before anything is
+/// written; the file is replaced atomically. Returns the new view. A refused layout leaves the file as it was.
+#[tauri::command]
+pub fn save_virtual_pad(layout: Value, shared: State<'_, Shared>) -> Result<Value, String> {
+    save_virtual_pad_of(layout, shared.inner())
+}
+
+pub fn save_virtual_pad_of(layout: Value, shared: &Shared) -> Result<Value, String> {
+    let parsed: gt4l_core::virtual_pad::Layout = serde_json::from_value(layout)
+        .map_err(|error| format!("the layout is not valid: {error}"))?;
+    let state = lock(shared);
+    let path = gt4l_core::virtual_pad::layout_path(&state.user_dirs);
+    gt4l_core::virtual_pad::save(&path, &parsed)?;
+    state::log(&state.dirs, &format!("virtual pad: layout saved ({} elements, opacity {:.2})", parsed.elements.len(), parsed.opacity));
+    Ok(virtual_pad_view(&state))
+}
+
+/// `reset_virtual_pad()`: deletes the player's layout, so the game uses the built-in one again. Returns the new view.
+#[tauri::command]
+pub fn reset_virtual_pad(shared: State<'_, Shared>) -> Result<Value, String> {
+    reset_virtual_pad_of(shared.inner())
+}
+
+pub fn reset_virtual_pad_of(shared: &Shared) -> Result<Value, String> {
+    let state = lock(shared);
+    let path = gt4l_core::virtual_pad::layout_path(&state.user_dirs);
+    let removed = gt4l_core::virtual_pad::reset(&path)?;
+    state::log(
+        &state.dirs,
+        if removed {
+            "virtual pad: layout reset, the player's file was deleted"
+        } else {
+            "virtual pad: layout reset, there was no player's file"
+        },
+    );
+    Ok(virtual_pad_view(&state))
 }
 
 // Saves and replays --------------------------------------------------------------------------------

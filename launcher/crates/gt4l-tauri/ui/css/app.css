@@ -473,6 +473,10 @@ body.input-pad nav.side .ring-on { box-shadow: none; }
 /* option rows: 48 px, label left, one control right */
 .row { display: flex; align-items: center; min-height: 38px; border-bottom: 1px solid var(--hair); gap: 16px; }
 .row .k { flex: 1; color: var(--white); display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* TASK-193 (the TASK-189 nit): a label wraps between words only, never inside one. Its box is never narrower than its longest
+   word (no min-width: 0 on the label), so a word is never split: the control gives way instead and shortens its value with an
+   ellipsis. */
+.row .k > span:first-child { overflow-wrap: normal; hyphens: manual; }
 /* Every control column is 220 px and right-aligned, so controls in one column line up
    (spatial focus depends on it). */
 .row .ctl { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: none; width: 240px; }
@@ -532,16 +536,29 @@ body.input-pad .info:focus .tip { display: block; }
 .row .ctl.wide .select { width: 100%; }
 
 /* The option control (owner, 2026-11-02), as the version switch on the home page: the value between two arrows, in an endless
-   loop; the new value slides in from the side of the arrow used. One focus stop: left and right step it. */
+   loop; the new value slides in from the side of the arrow used. One focus stop: left and right step it. Only the arrows change
+   it with a mouse or a finger (TASK-193). */
 .selector {
-  display: flex; align-items: center; width: 100%; height: 30px; font-size: 12.5px; color: var(--white); cursor: pointer;
+  display: flex; align-items: center; width: 100%; height: 30px; font-size: 12.5px; color: var(--white); cursor: default;
   border-radius: 3px;
 }
+/* TASK-193 (owner, 2026-11-06): the drawn arrow stays a 24 px box, but its hit area is bigger and invisible: 32 x 32 px with a
+   mouse and 44 x 44 px with a finger (the coarse rule below). The negative margin takes back the padding, so the glyph, the
+   value and the row's layout do not move, and the deeper box paints above the value's edge (z-index) for the touch area. */
 .selector-arrow {
-  flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 3px; color: var(--dim);
-  border: 1px solid transparent; transition: color 150ms ease, border-color 150ms ease;
+  --selector-arrow-hit: 32px;
+  flex: none; position: relative; z-index: 1; cursor: pointer;
+  width: var(--selector-arrow-hit); height: var(--selector-arrow-hit);
+  margin: calc((24px - var(--selector-arrow-hit)) / 2);
+  display: grid; place-items: center; color: var(--dim);
 }
-.selector-arrow:hover { color: var(--white); border-color: rgba(255, 255, 255, 0.3); }
+/* The hover ring is drawn on the 24 px box, so a bigger hit area does not change how the arrow looks. */
+.selector-arrow::after {
+  content: ""; position: absolute; inset: calc((var(--selector-arrow-hit) - 24px) / 2); border-radius: 3px;
+  border: 1px solid transparent; pointer-events: none; transition: border-color 150ms ease;
+}
+.selector-arrow:hover { color: var(--white); }
+.selector-arrow:hover::after { border-color: rgba(255, 255, 255, 0.3); }
 body.input-keys .selector:focus .selector-arrow,
 body.input-pad .selector:focus .selector-arrow { color: var(--white); }
 .selector.is-stuck { cursor: default; }
@@ -901,8 +918,8 @@ body.input-pad .selector:focus .selector-arrow { color: var(--white); }
 @media (pointer: coarse) {
   .row { min-height: 56px; gap: 28px; }
   .option { height: 56px; }
-  .selector-arrow { position: relative; }
-  .selector-arrow::before { content: ""; position: absolute; inset: -12px; }
+  /* TASK-193: a finger gets a 44 x 44 px hit area around each arrow (32 x 32 with a mouse above). */
+  .selector-arrow { --selector-arrow-hit: 44px; }
   .tab { min-height: 52px; line-height: 52px; }
   .hint { min-height: 52px; }
   .btn { height: 52px; }
@@ -1257,7 +1274,13 @@ body.input-pad .selector:focus .selector-arrow { color: var(--white); }
 .wh-line.is-warn { color: var(--silver); padding: 8px 10px; border-left: 2px solid #e3b341; background: rgba(227, 179, 65, 0.08); margin-top: 8px; }
 .wh-line.is-tip { color: var(--silver); padding: 8px 10px; border-left: 2px solid var(--accent); background: rgba(44, 107, 237, 0.09); margin-top: 8px; }
 .wh-device-row .row { min-height: 44px; }
-.wh-panel .row .ctl { width: 58%; }
+/* TASK-193: the label keeps the room its longest word needs and the control gives way (its value ends with an ellipsis), so a
+   word is never split and the arrows stay inside the card. */
+.wh-panel .row .ctl { width: 58%; min-width: 0; flex: 0 1 auto; }
+.wh-panel .row .k { min-width: 0; flex: 1 1 auto; font-size: 12.5px; line-height: 15px; white-space: normal; overflow-wrap: normal; hyphens: manual; }
+.wh-panel .row { align-items: center; gap: 8px; }
+/* The force feedback switches carry their value and two arrows: their labels get the room instead. */
+.wh-ffb .row .ctl { width: 48%; }
 .wh-sources { flex-wrap: wrap; justify-content: flex-end; }
 .xchip.wh-chip { width: auto; padding: 0 10px; border-radius: 13px; }
 .xchip.is-aux { border-color: rgba(92, 207, 174, 0.85); }
@@ -1311,4 +1334,189 @@ body.input-pad .selector:focus .selector-arrow { color: var(--white); }
 @media (prefers-reduced-motion: reduce) {
   .cx-ring.is-waiting { animation: none; }
   .wheel-svg .wh-plate, .wheel-svg .wh-hb-lever { transition: none; }
+}
+
+/* ---------- TASK-185: the virtual controller (Controls page, Android and the dev mock) ---------- */
+.cx-vpad {
+  flex: none; border: 1px solid var(--hair); border-radius: 12px; padding: 12px 16px 12px;
+  background: linear-gradient(180deg, rgba(44, 107, 237, 0.10), rgba(255, 255, 255, 0.015));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.cx-vpad h2 {
+  display: flex; align-items: center; gap: 8px;
+  font: 500 11px var(--label); letter-spacing: 0.18em; text-transform: uppercase; color: var(--dim);
+}
+.cx-vpad-status { margin: 4px 0 6px; color: var(--dim); font-size: 12px; }
+.cx-vpad-status.is-warning { color: #e3b341; }
+.cx-vpad-mode-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; }
+.cx-vpad-k { color: var(--dim); font-size: 13px; flex: none; }
+.cx-vpad-mode { flex: 1; min-width: 0; max-width: 260px; }
+.cx-vpad-rows .row { min-height: 44px; }
+.cx-vpad-actions { display: flex; gap: 10px; margin-top: 8px; }
+.cx-vpad-actions .btn { flex: 1; padding: 0 10px; }
+
+/* ---------- TASK-185: the layout editor (full screen above the Settings page, hints bar kept) ---------- */
+.vp-editor {
+  position: fixed; left: 0; right: 0; top: 0; bottom: 48px; z-index: 30;
+  display: flex; flex-direction: column; background: #05070c;
+  animation: fade-in 160ms ease-out;
+}
+.vp-bar {
+  flex: none; display: flex; align-items: center; gap: 14px; padding: 8px 16px;
+  border-bottom: 1px solid var(--hair); background: var(--ink);
+}
+.vp-heading { flex: 1; min-width: 0; }
+.vp-heading h2 { font: 300 20px/24px var(--text); color: var(--white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vp-sub { color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vp-aspect { flex: none; display: inline-flex; border: 1px solid var(--hair); border-radius: 20px; padding: 0 3px; background: rgba(255, 255, 255, 0.03); }
+.vp-aspect-btn {
+  min-height: 38px; padding: 0 14px; border-radius: 18px; color: var(--dim);
+  font: 500 12px var(--label); letter-spacing: 0.1em; touch-action: manipulation;
+}
+.vp-aspect-btn[aria-pressed="true"] { color: var(--paper-ink); background: var(--paper); }
+.vp-actions { flex: none; display: flex; gap: 8px; }
+.vp-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 10px; }
+.vp-canvas { position: relative; overflow: hidden; border-radius: 8px; touch-action: none; outline: none; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55); }
+.vp-scene { position: absolute; inset: 0; pointer-events: none; }
+.vp-sky { position: absolute; inset: 0; background: linear-gradient(180deg, #1d3153 0%, #5b6379 34%, #c08a63 54%, #2b2a30 55%, #12141a 100%); }
+.vp-sun {
+  position: absolute; left: 60%; top: 33%; width: 12%; height: 18%; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 216, 156, 0.95), rgba(255, 170, 90, 0.25) 58%, rgba(255, 170, 90, 0) 72%);
+}
+.vp-hills {
+  position: absolute; left: 0; right: 0; top: 47%; height: 12%;
+  background: linear-gradient(180deg, #2b2c35, #191a20);
+  clip-path: polygon(0 100%, 0 62%, 12% 34%, 27% 66%, 44% 20%, 61% 58%, 78% 28%, 100% 60%, 100% 100%);
+}
+.vp-road {
+  position: absolute; left: 30%; right: 30%; top: 55%; bottom: 0;
+  background: linear-gradient(180deg, #3b3e47, #202228);
+  clip-path: polygon(43% 0, 57% 0, 100% 100%, 0 100%);
+}
+.vp-lane {
+  position: absolute; left: 49.4%; width: 1.2%; top: 56%; bottom: 0;
+  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.72) 0 4%, rgba(255, 255, 255, 0) 4% 10%);
+  clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
+}
+.vp-dim {
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.62) 76%),
+              linear-gradient(180deg, rgba(6, 8, 14, 0.30), rgba(6, 8, 14, 0.58));
+}
+/* The F7 report button's corner (the contract's reserved zone). */
+.vp-reserved {
+  position: absolute; left: 0; top: 0; width: 5%; height: 13%; pointer-events: none;
+  border-right: 1px dashed rgba(227, 179, 65, 0.8); border-bottom: 1px dashed rgba(227, 179, 65, 0.8);
+  border-bottom-right-radius: 10px; display: grid; place-items: center;
+  color: rgba(227, 179, 65, 0.85); font: 500 10px var(--label); letter-spacing: 0.08em;
+}
+.vp-el {
+  position: absolute; display: grid; place-items: center; border-radius: 50%; cursor: grab; touch-action: none;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.05) 62%, rgba(0, 0, 0, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.vp-el[data-kind="dpad"], .vp-el[data-kind="stick"] { border-radius: 50%; }
+/* A wide button (L1, Start) is a bar, not an ellipse. */
+.vp-el[data-wide="1"] { border-radius: 20%; }
+.vp-el.is-selected { border-color: #9cc0ff; box-shadow: 0 0 0 2px rgba(156, 192, 255, 0.75), 0 0 26px rgba(44, 107, 237, 0.6); }
+.vp-el.is-hidden { border-style: dashed; filter: saturate(0.2); }
+.vp-el.is-hidden::after {
+  content: ""; position: absolute; left: 16%; right: 16%; top: 50%; border-top: 2px dashed rgba(255, 255, 255, 0.7);
+  transform: rotate(-22deg); pointer-events: none;
+}
+.vp-art { position: absolute; inset: 9%; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.vp-art .ds-glyph { width: 100%; height: 100%; }
+.vp-dpad, .vp-stick { width: 100%; height: 100%; }
+.vp-dpad path { fill: rgba(255, 255, 255, 0.24); }
+.vp-stick .ring { fill: rgba(255, 255, 255, 0.10); stroke: rgba(255, 255, 255, 0.38); stroke-width: 3; }
+.vp-stick .knob { fill: rgba(255, 255, 255, 0.34); }
+.vp-handle {
+  position: absolute; z-index: 2; transform: translate(-50%, -50%); border-radius: 4px; touch-action: none;
+  background: #9cc0ff; border: 2px solid #0a0c14; box-shadow: 0 0 12px rgba(44, 107, 237, 0.85); cursor: nwse-resize;
+}
+.vp-handle[hidden] { display: none; }
+.vp-warning {
+  flex: none; margin: 0 16px 6px; padding: 8px 12px; border-left: 2px solid #e3b341;
+  background: rgba(227, 179, 65, 0.08); color: var(--silver); font-size: 12px;
+}
+.vp-warning.is-error { border-color: var(--error); background: rgba(214, 69, 69, 0.10); }
+.vp-dock {
+  flex: none; display: flex; flex-direction: column; gap: 6px; padding: 6px 12px 8px;
+  border-top: 1px solid var(--hair); background: rgba(10, 12, 20, 0.96);
+}
+.vp-dock-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.vp-dock-label { flex: none; color: var(--faint); font: 500 10px var(--label); letter-spacing: 0.16em; text-transform: uppercase; }
+.vp-chips { display: flex; gap: 6px; overflow-x: auto; padding: 2px; scrollbar-width: thin; scrollbar-color: var(--faint) transparent; }
+.vp-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 10px;
+  border: 1px solid var(--hair); border-radius: 17px; color: var(--dim); background: rgba(255, 255, 255, 0.03);
+  touch-action: manipulation;
+}
+.vp-chip.is-selected { color: var(--paper-ink); background: var(--paper); border-color: var(--paper); }
+.vp-chip-art { width: 18px; height: 18px; display: grid; place-items: center; }
+.vp-chip-art .vp-art { position: static; inset: auto; width: 100%; height: 100%; }
+.vp-chip-name { white-space: nowrap; font-size: 12px; }
+.vp-dock-controls { align-items: stretch; }
+.vp-inspector { flex: 3 1 0; min-width: 0; }
+.vp-globals { flex: 2 1 0; min-width: 0; border-left: 1px solid var(--hair); padding-left: 12px; }
+.vp-selection-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.vp-selection { flex: none; display: flex; align-items: center; gap: 8px; min-width: 118px; max-width: 160px; }
+.vp-selection-art { width: 26px; height: 26px; display: grid; place-items: center; flex: none; }
+.vp-selection-art .vp-art { position: static; inset: auto; width: 100%; height: 100%; }
+.vp-selection-name { color: var(--white); font: 500 13px var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vp-rows { flex: 1; display: flex; align-items: center; gap: 8px 14px; min-width: 0; flex-wrap: wrap; }
+.vp-rows .row { flex: 1 1 220px; min-width: 190px; min-height: 38px; border-bottom: 0; gap: 8px; padding: 0; }
+.vp-rows .row .k { gap: 6px; font-size: 12px; }
+.vp-rows .row .ctl { width: 118px; gap: 6px; }
+.vp-rows .row .ctl .selector { height: 26px; }
+.vp-rows .row .ctl .val { font-size: 12px; }
+.vp-empty { color: var(--faint); font-size: 12px; padding: 10px 0; }
+
+@media (max-height: 620px) {
+  .vp-bar { padding: 6px 12px; gap: 10px; }
+  .vp-heading h2 { font-size: 16px; line-height: 20px; }
+  .vp-sub { font-size: 11px; }
+  .vp-aspect-btn { min-height: 32px; padding: 0 10px; }
+  .vp-actions .btn { min-height: 32px; }
+  .vp-stage { padding: 6px; }
+  .vp-chip { min-height: 30px; padding: 0 8px; }
+  .vp-dock { padding: 4px 10px 6px; gap: 4px; }
+  .vp-rows .row { min-height: 32px; flex-basis: 190px; min-width: 170px; }
+  .vp-selection-art { width: 22px; height: 22px; }
+  .vp-selection { min-width: 96px; }
+}
+@media (max-width: 820px) {
+  .vp-heading h2 { font-size: 15px; }
+  .vp-sub { display: none; }
+  .vp-actions .btn { padding: 0 8px; font-size: 11px; }
+  .vp-globals { border-left: 0; padding-left: 0; }
+  .vp-dock-controls { flex-direction: column; }
+}
+/* A phone in landscape is about 915 x 412 CSS pixels: the dock becomes one compact, scrollable row so the canvas keeps
+   most of the screen. */
+@media (max-height: 500px) {
+  .vp-bar { padding: 4px 10px; gap: 8px; }
+  .vp-heading h2 { font-size: 14px; line-height: 18px; }
+  .vp-sub { display: none; }
+  .vp-aspect-btn { min-height: 28px; padding: 0 9px; font-size: 11px; }
+  .vp-actions { gap: 6px; }
+  .vp-actions .btn { min-height: 28px; padding: 0 9px; font-size: 11px; }
+  .vp-stage { padding: 4px; }
+  .vp-dock { padding: 3px 8px 4px; gap: 3px; }
+  .vp-dock-label { display: none; }
+  .vp-chip { min-height: 26px; padding: 0 7px; }
+  .vp-chip-name { font-size: 11px; }
+  .vp-chip-art { width: 14px; height: 14px; }
+  .vp-selection { display: none; }
+  .vp-dock-controls { flex-direction: row; align-items: center; gap: 8px; }
+  .vp-inspector, .vp-globals { flex: 1 1 0; }
+  .vp-rows { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+  .vp-rows .row { flex: 0 0 auto; min-width: 148px; min-height: 28px; }
+  .vp-rows .row .k { font-size: 11px; }
+  .vp-rows .row .ctl { width: 92px; }
+  .vp-globals { border-left: 1px solid var(--hair); padding-left: 8px; }
+  /* The mode's value needs the full panel width on a phone (the selector's arrows take 48 px). */
+  .cx-vpad-mode-row { flex-direction: column; align-items: stretch; gap: 2px; min-height: 0; padding: 2px 0 4px; }
+  .cx-vpad-k { font-size: 11px; color: var(--faint); }
+  .cx-vpad-mode { max-width: none; }
 }

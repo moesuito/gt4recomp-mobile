@@ -5,6 +5,7 @@
  * GT4.input.swipeStep(dx, dy)            -> +1 (next tab), -1 (previous tab), 0 (not a swipe)
  * GT4.input.stickScroll(value)           -> scroll distance in px for one frame (value -1..1)
  * GT4.input.valueFromPointer(x, left, width, min, max, step) -> stepped slider value
+ * GT4.input.stepsFromActivation(detail)  -> true for a keyboard or assistive click, false for a pointer one
  */
 (function (root) {
   "use strict";
@@ -43,6 +44,13 @@
     var stepSize = step > 0 ? step : 1;
     var stepped = min + Math.round((raw - min) / stepSize) * stepSize;
     return Math.min(max, Math.max(min, stepped));
+  }
+
+  // A click made by the keyboard, by the pad or by assistive technology has no click count (the DOM's `detail` is 0: nav.js
+  // activate() calls click() on the focused control); a mouse, finger or pen click carries its count (1, 2...). An option
+  // row only steps on the first kind, so its label and value stop changing the value under a pointer (TASK-193).
+  function stepsFromActivation(detail) {
+    return !(Number(detail) > 0);
   }
 
   // Which action a face or shoulder button triggers. state = {capturing, dialogOpen, tipOpen, hooks: {x, y, start, tabs}}.
@@ -84,6 +92,7 @@
     swipeStep: swipeStep,
     stickScroll: stickScroll,
     valueFromPointer: valueFromPointer,
+    stepsFromActivation: stepsFromActivation,
     SWIPE_MIN_PX: SWIPE_MIN_PX,
     STICK_DEADZONE: STICK_DEADZONE
   };

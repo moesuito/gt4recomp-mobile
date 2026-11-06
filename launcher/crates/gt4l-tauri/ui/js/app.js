@@ -314,6 +314,10 @@
     if (appState.wheel === false) {
       GT4.features.wheel = false;
     }
+    // TASK-185: the on-screen pad and its layout editor exist where the game draws them (Android); the backend says so.
+    if (appState.virtual_pad === true) {
+      GT4.features.virtualPad = true;
+    }
     booted = true;
     showMigration(appState);
     var route = parseRoute();

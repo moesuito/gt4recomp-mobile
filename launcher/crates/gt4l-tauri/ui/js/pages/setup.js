@@ -41,6 +41,15 @@
   };
   var POLL_MS = 400;
 
+  // TASK-180 (owner, 2026-11-06): the last step prepares the renderer, which on Android means nothing at all: CoreGS 2.0 is
+  // inside the game and the PC GSdx is never downloaded there. The row is left out instead of sitting greyed for ever.
+  function stepsHere() {
+    if (GT4.platform !== "android") {
+      return STEPS;
+    }
+    return STEPS.filter(function (step) { return step.id !== "renderer"; });
+  }
+
   function call(command, args) {
     return GT4.backend.call(command, args);
   }
@@ -132,7 +141,8 @@
     var steps = [];
     var buttons = [];
     var hints = [];
-    var order = STEPS.map(function (s) { return s.id; }).indexOf(setup.step);
+    var shown = stepsHere();
+    var order = shown.map(function (s) { return s.id; }).indexOf(setup.step);
     var running = state === "checking";
     var done = state === "done";
     var discName = setup.disc_name || "";
@@ -152,7 +162,7 @@
     // A refused file, a stopped run and missing game files show the Disc row and the reason only, so the buttons
     // stay on screen at 1280 x 720.
     if (state === "needed" || running || done) {
-      STEPS.forEach(function (step, index) {
+      shown.forEach(function (step, index) {
         var status = "wait";
         var pct = null;
         var bytesText = null;

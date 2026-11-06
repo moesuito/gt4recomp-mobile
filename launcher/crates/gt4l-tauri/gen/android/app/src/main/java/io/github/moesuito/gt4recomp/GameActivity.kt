@@ -17,6 +17,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.input.InputManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -26,6 +27,7 @@ import android.os.Process
 import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.InputDevice
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -70,6 +72,27 @@ class GameActivity : SDLActivity() {
         @JvmStatic
         external fun nativePadMotion(axis: Int, value: Float)
 
+        // TASK-185: the virtual pad. Load parses the player's layout text (null when there is no file) and the APK's
+        // default and returns the lines to log; Geometry and Binds are what the overlay draws; Touch is one element and
+        // its offsets; Active says whether the pad is shown at all (hidden means no input, never a stuck button).
+        @JvmStatic
+        external fun nativeVirtualPadLoad(player: String?, fallback: String): String
+
+        @JvmStatic
+        external fun nativeVirtualPadGeometry(): FloatArray?
+
+        @JvmStatic
+        external fun nativeVirtualPadFromPlayer(): Boolean
+
+        @JvmStatic
+        external fun nativeVirtualPadBinds(): Array<String>?
+
+        @JvmStatic
+        external fun nativeVirtualPadTouch(element: Int, dx: Float, dy: Float, down: Boolean)
+
+        @JvmStatic
+        external fun nativeVirtualPadActive(active: Boolean, reason: String)
+
         // The Android key codes of a gamepad's buttons (KeyEvent.KEYCODE_*): the ones own_pad_event forwards. A pad key
         // event that SDL does understand reaches SDL too; the native side ignores these while SDL has a gamepad open.
         private val PAD_KEYS = intArrayOf(
@@ -110,6 +133,9 @@ class GameActivity : SDLActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // TASK-185: the overlay is added before the F7 button, so the button stays on top of its corner in the view order
+        // (and the layout keeps that corner free anyway).
+        createVirtualPad()
         val environment = intent.getStringArrayExtra(EXTRA_ENVIRONMENT) ?: arrayOf()
         if (environment.contains("GT4_PERF=1")) addReportButton()
         // TASK-180 test2 (owner): Back pauses the game and asks what to do. Android 13+ (and every app targeting 36)
@@ -117,6 +143,8 @@ class GameActivity : SDLActivity() {
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT) { onBack() }
         }
+        // TASK-185: a controller plugged in, unplugged or changed while the game runs shows or hides the virtual pad.
+        getSystemService(InputManager::class.java)?.registerInputDeviceListener(controllerListener, heartbeat)
         heartbeat.post(beat)
     }
 
@@ -202,6 +230,8 @@ class GameActivity : SDLActivity() {
     // parks and lets go of its surface before the window is destroyed (owner's test1: black screen after Settings).
     override fun onPause() {
         paused = true
+        // TASK-185: a pad left pressed while the activity goes away would stay pressed in the game.
+        virtualPad?.releaseAll()
         if (libraryLoaded) {
             val released = nativeEnterBackground(1500)
             Log.i(TAG, "paused: the activity left the foreground (surface ${if (released) "released" else "NOT released in 1.5 s"})")
@@ -211,6 +241,11 @@ class GameActivity : SDLActivity() {
 
     override fun onResume() {
         super.onResume()
+        // TASK-185: the game libraries are loaded by now (onCreate may run before SDLActivity has them), so this is where
+        // the layout is read when it was not ready yet. The text is read again at every start, never cached between
+        // sessions: the player's file may have changed in the launcher.
+        loadVirtualPad()
+        refreshVirtualPadVisibility()
         if (libraryLoaded) {
             nativeLeaveBackground()
             if (pauseDialog?.isShowing != true) setPaused(false, "the activity is back in the foreground")
@@ -226,6 +261,178 @@ class GameActivity : SDLActivity() {
         super.onNewIntent(intent)
         // The launch contract stays the first intent's; a Resume only brings the activity back.
         if (intent.getBooleanExtra(EXTRA_RESUME, false)) Log.i(TAG, "resume from the launcher")
+    }
+
+    // TASK-185 (owner, 2026-11-06): the on-screen virtual pad, for a phone with no controller. The layout is the file the
+    // launcher's editor writes (`<user>/virtual-pad.json`: the same user folder as the launcher's settings) or the
+    // built-in default; this activity draws it, forwards touches and decides when it shows:
+    //   auto   only while no physical controller is connected (the default);
+    //   always even with one (the virtual buttons combine with the pad's);
+    //   off    never.
+    // The contract with the editor and the native side is TASK-185's layout file (android/virtual-pad/).
+    private var virtualPad: VirtualPadView? = null
+    private var virtualPadLoaded = false
+    private var virtualPadShown: Boolean? = null
+    private var virtualPadMode = "auto"
+    // TASK-185 evidence on an emulator, which attaches no controller: GT4_VIRTUAL_PAD_TEST_CONTROLLER=<name>, set through
+    // debug.env, reports a controller plugged in eight seconds into the session, through the same refresh the Android
+    // device listener calls. It is never in a player's launch plan; with it unset nothing changes.
+    private val injectedControllers = ArrayList<String>()
+    private var injectedControllerPosted = false
+
+    // The pad's visibility follows Android's input devices, hot-plug included.
+    private val controllerListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = refreshVirtualPadVisibility()
+
+        override fun onInputDeviceRemoved(deviceId: Int) = refreshVirtualPadVisibility()
+
+        override fun onInputDeviceChanged(deviceId: Int) = refreshVirtualPadVisibility()
+    }
+
+    private fun createVirtualPad() {
+        if (virtualPad != null) return
+        virtualPadMode = when (val mode = launchValue("GT4_VIRTUAL_PAD")) {
+            "always" -> "always"
+            "off" -> "off"
+            else -> if (mode == null || mode == "auto") "auto" else {
+                Log.w(TAG, "virtual pad: unknown GT4_VIRTUAL_PAD value '$mode', using auto")
+                "auto"
+            }
+        }
+        if (virtualPadMode == "off") {
+            Log.i(TAG, "virtual pad off: GT4_VIRTUAL_PAD=off")
+            return
+        }
+        Log.i(TAG, "virtual pad mode: $virtualPadMode (GT4_VIRTUAL_PAD=${launchValue("GT4_VIRTUAL_PAD") ?: "unset"})")
+        val view = VirtualPadView(this)
+        view.visibility = View.GONE
+        view.onTouchElement = { element, dx, dy, down ->
+            if (libraryLoaded) nativeVirtualPadTouch(element, dx, dy, down)
+        }
+        addContentView(view, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+        virtualPad = view
+        loadVirtualPad()
+    }
+
+    // Reads the layout, once per process (one game start): the player's file, else the APK's default. Both texts are
+    // parsed by the native pad, which also logs what it made of them (an unknown binds, a clamped coordinate, a broken
+    // file that falls back to the default).
+    private fun loadVirtualPad() {
+        val view = virtualPad ?: return
+        if (virtualPadLoaded || !libraryLoaded) return
+        val fallback = readAsset("default-layout.json")
+        if (fallback == null) {
+            Log.w(TAG, "virtual pad: the APK has no default layout, the pad stays off")
+            return
+        }
+        val player = readPlayerLayout()
+        val report = nativeVirtualPadLoad(player?.first, fallback)
+        for (line in report.split('\n')) {
+            if (line.isNotBlank()) Log.i(TAG, "virtual pad layout: $line")
+        }
+        val geometry = nativeVirtualPadGeometry()
+        if (geometry == null || geometry.size < 3) {
+            Log.w(TAG, "virtual pad: the native pad returned no geometry, the pad stays off")
+            return
+        }
+        view.setLayout(geometry, nativeVirtualPadBinds() ?: arrayOf())
+        virtualPadLoaded = true
+        val source = when {
+            !nativeVirtualPadFromPlayer() -> "the built-in default"
+            player != null -> player.second
+            else -> "the player layout"
+        }
+        Log.i(TAG, "virtual pad: ${geometry[0].toInt()} elements, layout from $source")
+        injectTestController()
+        refreshVirtualPadVisibility()
+    }
+
+    // The evidence hook of the class comment: one injected device event, eight seconds in, so a session on an emulator
+    // shows the `auto` rule hiding the pad exactly as a Bluetooth pad being switched on would.
+    private fun injectTestController() {
+        if (injectedControllerPosted) return
+        val name = launchValue("GT4_VIRTUAL_PAD_TEST_CONTROLLER") ?: return
+        injectedControllerPosted = true
+        heartbeat.postDelayed({
+            Log.i(TAG, "virtual pad: test hook, reporting '$name' as a controller that was just connected")
+            injectedControllers.add(name)
+            refreshVirtualPadVisibility()
+        }, 8000)
+    }
+
+    // The player's file: the launcher's user folder first (the one that holds config/settings.toml), then the app's
+    // external files folder as the contract names it, so a layout dropped there by hand is found too.
+    private fun readPlayerLayout(): Pair<String, String>? {
+        val candidates = listOfNotNull(
+            File(filesDir.parentFile, "user/virtual-pad.json"),
+            getExternalFilesDir(null)?.let { File(it, "user/virtual-pad.json") },
+        )
+        for (file in candidates) {
+            if (!file.isFile) continue
+            try {
+                Log.i(TAG, "virtual pad: player layout ${file.absolutePath} (${file.length()} bytes)")
+                return file.readText() to file.absolutePath
+            } catch (error: Exception) {
+                Log.w(TAG, "virtual pad: cannot read ${file.absolutePath}: $error")
+            }
+        }
+        Log.i(TAG, "virtual pad: no player layout at ${candidates.joinToString(" or ") { it.absolutePath }}")
+        return null
+    }
+
+    private fun readAsset(name: String): String? = try {
+        assets.open(name).use { stream -> stream.readBytes().toString(Charsets.UTF_8) }
+    } catch (error: Exception) {
+        Log.w(TAG, "virtual pad: cannot read the asset $name: $error")
+        null
+    }
+
+    // Shows or hides the overlay and tells the native pad, which stops contributing input while it is hidden. Every
+    // change is logged with its reason ("virtual pad shown: no controller").
+    private fun refreshVirtualPadVisibility() {
+        val view = virtualPad ?: return
+        val controllers = connectedControllers()
+        val wanted = virtualPadMode == "always" || controllers.isEmpty()
+        val description = when {
+            virtualPadMode == "always" -> "always (GT4_VIRTUAL_PAD=always)"
+            wanted -> "no controller"
+            else -> "${controllers.first()} connected"
+        }
+        val line = (if (wanted) "shown: " else "hidden: ") + description
+        val changed = virtualPadShown != wanted
+        if (changed) {
+            virtualPadShown = wanted
+            Log.i(TAG, "virtual pad $line")
+        }
+        // A layout that failed to load draws nothing, so the overlay never takes touches for nothing.
+        view.visibility = if (wanted && virtualPadLoaded) View.VISIBLE else View.GONE
+        if (!wanted) view.releaseAll()
+        if (libraryLoaded) nativeVirtualPadActive(wanted, if (changed) line else "")
+    }
+
+    // Every input device Android reports as a controller: a gamepad or a joystick, Bluetooth, USB or built in. The
+    // emulator's touchscreen and keyboards offer neither source, so `auto` shows the pad on a phone with none attached.
+    private fun connectedControllers(): List<String> {
+        val manager = getSystemService(InputManager::class.java) ?: return injectedControllers
+        val names = ArrayList<String>(injectedControllers)
+        for (id in manager.inputDeviceIds) {
+            val device = InputDevice.getDevice(id) ?: continue
+            val controller = device.supportsSource(InputDevice.SOURCE_GAMEPAD) ||
+                device.supportsSource(InputDevice.SOURCE_JOYSTICK)
+            if (controller) names.add(device.name)
+        }
+        return names
+    }
+
+    // A NAME=VALUE entry of the launch contract (the game.ini values the launcher passes), or null.
+    private fun launchValue(name: String): String? {
+        val prefix = "$name="
+        return intent.getStringArrayExtra(EXTRA_ENVIRONMENT)
+            ?.firstOrNull { it.startsWith(prefix) }
+            ?.substring(prefix.length)
     }
 
     // TASK-180 (owner, 2026-11-05): the F7/F8 performance report without a keyboard. Only while the launcher's
@@ -392,6 +599,7 @@ class GameActivity : SDLActivity() {
 
     override fun onDestroy() {
         heartbeat.removeCallbacks(beat)
+        getSystemService(InputManager::class.java)?.unregisterInputDeviceListener(controllerListener)
         File(filesDir, HEARTBEAT_FILE).delete()
         Log.i(TAG, "game activity closed; the game process ends")
         super.onDestroy()

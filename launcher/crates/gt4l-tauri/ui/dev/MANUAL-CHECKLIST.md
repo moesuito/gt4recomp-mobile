@@ -26,6 +26,18 @@ Do not launch the game for these checks. Tick each item in the Tauri build befor
 - [ ] Tab and Shift+Tab move through controls in document order.
 - [ ] The focus ring shows after a key press and disappears after a mouse click.
 
+## Virtual controller (TASK-185; Android, and the dev mock)
+
+- [ ] Controls > Virtual controller: the mode steps Auto, Always and Off; the opacity and vibration rows write at once.
+- [ ] Edit layout opens a full-screen editor; the Save button is disabled until something changes.
+- [ ] Drag a button; pinch or drag its corner handle to resize; tap an empty spot to deselect.
+- [ ] The F7 corner is drawn; moving a button onto it shows the warning line; Undo puts it back.
+- [ ] The 20:9, 16:9 and 21:9 buttons reshape the canvas without changing any button.
+- [ ] Save closes the editor and the section says "Your layout"; Reset to default asks first and deletes the file.
+- [ ] Keyboard: Tab and Shift+Tab stay inside the editor, arrows move, Shift+arrows resize, Esc asks before losing changes.
+- [ ] Pad: the D-pad and A move the focus and select, the left stick moves the selected button, LB/RB resize, B goes back.
+- [ ] On Windows the section is absent (the game draws no virtual pad there).
+
 ## Mouse
 
 - [ ] Every control responds to a click. Sliders drag and commit on release.

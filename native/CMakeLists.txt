@@ -909,6 +909,12 @@ target_include_directories(gt4_sdl3 INTERFACE "${GT4_SDL3_ROOT}/devel/SDL3-3.4.1
 target_link_libraries(gt4_sdl3 INTERFACE "${GT4_SDL3_ROOT}/${GT4_SDL3_IMPORT_LIB}")
 add_library(gt4_pad_mapping STATIC pad_mapping.cpp pad_choice.cpp input_recording.cpp)
 target_compile_options(gt4_pad_mapping PRIVATE /W4)
+# TASK-185: the virtual pad's layout file, its validation, the stick/d-pad maths and the merge with the physical pad. Pure
+# C++, so the fixture below checks it here; the Android build (android/native/CMakeLists.txt) links the same file.
+add_library(gt4_virtual_pad STATIC virtual_pad.cpp)
+target_include_directories(gt4_virtual_pad PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(gt4_virtual_pad PUBLIC gt4_pad_mapping)
+target_compile_options(gt4_virtual_pad PRIVATE /W4)
 # TASK-180 (Linux plan L0): the platform layer (native/platform/platform.hpp). Windows builds its Win32 form; the Android
 # build (android/native/CMakeLists.txt) builds platform_posix.cpp and the SDL3 host instead.
 add_library(gt4_platform STATIC platform/platform_win32.cpp)
@@ -1061,6 +1067,15 @@ add_test(NAME native_input_recording COMMAND input_recording_fixture native_inpu
 add_executable(pad_mapping_fixture pad_mapping_fixture.cpp controls.cpp)
 target_link_libraries(pad_mapping_fixture PRIVATE gt4_pad_mapping)
 target_compile_options(pad_mapping_fixture PRIVATE /W4)
+# TASK-185: the virtual pad's layout file (the contract shared with the launcher's editor), the stick and d-pad maths and
+# the merge with the physical pad. The shipped default layout is read from the repository, so its rules are checked too.
+add_executable(virtual_pad_fixture virtual_pad_fixture.cpp)
+target_link_libraries(virtual_pad_fixture PRIVATE gt4_virtual_pad)
+target_compile_options(virtual_pad_fixture PRIVATE /W4)
+target_compile_definitions(virtual_pad_fixture PRIVATE
+    GT4_VIRTUAL_PAD_DEFAULT_LAYOUT="${GT4_ROOT}/android/virtual-pad/default-layout.json")
+add_test(NAME native_virtual_pad COMMAND $<TARGET_FILE:virtual_pad_fixture>)
+set_tests_properties(native_virtual_pad PROPERTIES PASS_REGULAR_EXPRESSION "PASS: virtual pad fixture")
 add_executable(host_io_fixture host_io_fixture.cpp)
 target_link_libraries(host_io_fixture PRIVATE native_host_io)
 add_custom_command(TARGET host_io_fixture POST_BUILD

@@ -404,7 +404,8 @@
 
   // The option control (owner, 2026-11-02), as the version switch on the home page: the value between two arrows, in an endless loop,
   // and the new value slides in from the side of the arrow used. It is one focus stop: left and right on the keyboard or the pad step
-  // it, A or a click on the value goes to the next one. Options that cannot be chosen are left out of the loop.
+  // it, A goes to the next one, and with a mouse or a finger only the arrows change it, left arrow back and right arrow forward
+  // (TASK-193, owner 2026-11-06). Options that cannot be chosen are left out of the loop.
   // spec = {id, label, options: [{value, text, disabled?}], current, disabled, onChange(value)}
   function optionSelector(spec) {
     var loop = spec.options.filter(function (option) {
@@ -485,6 +486,7 @@
         class: "selector-arrow",
         on: {
           click: function (event) {
+            // Only the arrow steps, and only in its own direction (TASK-193).
             event.stopPropagation();
             step(direction);
           }
@@ -493,7 +495,16 @@
     }
 
     var root = h("div", attributes, [arrow(-1), valueWindow, arrow(1)]);
-    root.addEventListener("click", function () { step(1); });
+    // TASK-193 (owner, 2026-11-06): a tap or a click on the row's label or value no longer changes the value; only the two
+    // arrows do (their hit areas are the invisible padding in css/app.css). The keyboard, the pad and assistive technology
+    // still step forward: nav.js activate() clicks the focused row, and that click has no click count, while a mouse, finger
+    // or pen click carries one.
+    root.addEventListener("click", function (event) {
+      if (!GT4.input.stepsFromActivation(event.detail)) {
+        return;
+      }
+      step(1);
+    });
     root.addEventListener("gt4-adjust", function (event) { step(event.detail.delta > 0 ? 1 : -1); });
     return root;
   }

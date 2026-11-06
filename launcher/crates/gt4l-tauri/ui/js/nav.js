@@ -1,6 +1,8 @@
 /*
  * Input: spatial focus movement and the keyboard. Pages describe their actions through
- * GT4.hooks = {x, y, start, back, tabs(delta), horizontal(delta)}; the router resets it per page.
+ * GT4.hooks = {x, y, start, back, tabs(delta), horizontal(delta), vertical(delta)}; the router resets it per page.
+ * horizontal and vertical return true when the page took the press (the virtual pad editor moves its element with the
+ * arrows); a false return keeps the launcher's focus movement and slider stepping.
  *
  * The pad comes from the launcher's Rust side (SDL3, the layer the game uses): the `pad-nav` event carries the press,
  * and Rust does the D-pad and left-stick repeat (first press at once, then after 420 ms and every 110 ms while held).
@@ -110,6 +112,18 @@
     return !!el && (el.type === "range" || el.hasAttribute("data-adjust"));
   }
 
+  // Up/down: a page may take the press first (the virtual pad editor: the arrows move the selected element); otherwise
+  // focus moves.
+  function vertical(delta) {
+    if (GT4.capturing) {
+      return;
+    }
+    if (GT4.hooks.vertical && GT4.hooks.vertical(delta)) {
+      return;
+    }
+    move(delta < 0 ? "up" : "down");
+  }
+
   // Left/right change the focused slider or dropdown; otherwise they move focus.
   function horizontal(delta) {
     if (GT4.capturing) {
@@ -187,7 +201,7 @@
     }
     setMode("pad");
     if (name === "up" || name === "down") {
-      move(name);
+      vertical(name === "up" ? -1 : 1);
       return;
     }
     if (name === "left" || name === "right") {
@@ -278,11 +292,11 @@
     switch (event.key) {
       case "ArrowUp":
         event.preventDefault();
-        move("up");
+        vertical(-1);
         break;
       case "ArrowDown":
         event.preventDefault();
-        move("down");
+        vertical(1);
         break;
       case "ArrowLeft":
         event.preventDefault();

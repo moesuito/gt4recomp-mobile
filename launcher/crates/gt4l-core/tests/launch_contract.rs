@@ -398,18 +398,39 @@ performance_hud = \"off\"
 
 #[test]
 fn setup_tries_coregs20_only_on_a_new_install_with_no_choice_and_no_gsdx() {
+    use gt4l_core::platform::Platform;
     use launch::{setup_renderer, SetupRenderer};
     let settings = Settings::default();
-    assert_eq!(setup_renderer(&settings, true, true), SetupRenderer::TryCoregs20, "a new install");
-    assert_eq!(setup_renderer(&settings, true, false), SetupRenderer::Gsdx, "GSdx is already there: it stays");
-    assert_eq!(setup_renderer(&settings, false, true), SetupRenderer::Gsdx, "a second game of a player on GSdx");
+    assert_eq!(setup_renderer(Platform::Windows, &settings, true, true), SetupRenderer::TryCoregs20, "a new install");
+    assert_eq!(setup_renderer(Platform::Windows, &settings, true, false), SetupRenderer::Gsdx, "GSdx is already there: it stays");
+    assert_eq!(setup_renderer(Platform::Windows, &settings, false, true), SetupRenderer::Gsdx, "a second game of a player on GSdx");
     let mut chose_gsdx = Settings::default();
     chose_gsdx.set_by_user("renderer", "pcsx2").unwrap();
-    assert_eq!(setup_renderer(&chose_gsdx, true, true), SetupRenderer::Gsdx, "the player's choice wins");
+    assert_eq!(setup_renderer(Platform::Windows, &chose_gsdx, true, true), SetupRenderer::Gsdx, "the player's choice wins");
     let mut chose_coregs = Settings::default();
     chose_coregs.set_by_user("renderer", "coregs20").unwrap();
-    assert_eq!(setup_renderer(&chose_coregs, true, true), SetupRenderer::Coregs20, "nothing to install or to try");
-    assert_eq!(setup_renderer(&chose_coregs, false, true), SetupRenderer::Coregs20);
+    assert_eq!(setup_renderer(Platform::Windows, &chose_coregs, true, true), SetupRenderer::Coregs20, "nothing to install or to try");
+    assert_eq!(setup_renderer(Platform::Windows, &chose_coregs, false, true), SetupRenderer::Coregs20);
+}
+
+#[test]
+fn android_never_installs_gsdx_at_the_end_of_setup() {
+    // TASK-180 (owner, 2026-11-06): the Android launcher downloaded the PC GSdx (gt4-gs.exe) at the end of setup, because
+    // setup tried CoreGS 2.0 on "this PC", could not run a Windows program there, and fell back to GSdx. A platform without
+    // GSdx has nothing to try and nothing to install: CoreGS 2.0 is inside the game.
+    use gt4l_core::platform::Platform;
+    use launch::{gsdx_installs_here, setup_renderer, SetupRenderer};
+    let settings = Settings::default();
+    assert!(!gsdx_installs_here(Platform::Android), "no GSdx download or install starts on Android");
+    assert!(gsdx_installs_here(Platform::Windows), "Windows is unchanged");
+    for (first_game, gsdx_missing) in [(true, true), (true, false), (false, true), (false, false)] {
+        assert_eq!(setup_renderer(Platform::Android, &settings, first_game, gsdx_missing), SetupRenderer::Coregs20,
+            "first_game {first_game}, gsdx_missing {gsdx_missing}");
+    }
+    let mut chose_gsdx = Settings::default();
+    chose_gsdx.set_by_user("renderer", "pcsx2").unwrap();
+    assert_eq!(setup_renderer(Platform::Android, &chose_gsdx, true, true), SetupRenderer::Coregs20, "a stored PC choice installs nothing here");
+    assert!(launch::GSDX_WINDOWS_ONLY.contains("Android"), "the refusal names the platform");
 }
 
 #[test]
@@ -805,4 +826,28 @@ fn the_wheel_file_line_of_game_ini_stands_for_gt4_wheel_file() {
     let variables = variables_of_game_ini(&line);
     assert_eq!(variables.get("GT4_WHEEL_FILE").map(String::as_str), Some(r"C:\Users\Player\AppData\Roaming\GT4Recomp\wheel.toml"));
     assert!(!launch::standalone_config_text(&Settings::default(), None).contains("wheel_file"), "only written when the file exists");
+}
+
+#[test]
+fn the_virtual_pad_mode_is_a_stored_choice_with_auto_as_default() {
+    // TASK-185: the game gets `GT4_VIRTUAL_PAD=auto|always|off`; the pad's layout file travels separately (the user
+    // folder), so only this one value is passed.
+    assert_eq!(launch::virtual_pad_mode("auto"), "auto");
+    assert_eq!(launch::virtual_pad_mode("always"), "always");
+    assert_eq!(launch::virtual_pad_mode("off"), "off");
+    // An edited settings file never takes the pad away by accident.
+    assert_eq!(launch::virtual_pad_mode(""), "auto");
+    assert_eq!(launch::virtual_pad_mode("ALWAYS"), "auto");
+    assert_eq!(launch::virtual_pad_mode("on"), "auto");
+
+    // The default and a build without the launcher's row (the editor owns it) both pass auto.
+    assert_eq!(launch::virtual_pad_environment(&Settings::default()), "auto");
+    // When the setting exists, its three values pass through unchanged.
+    let mut settings = Settings::default();
+    if settings::definition("virtual_pad").is_some() {
+        for value in ["auto", "always", "off"] {
+            settings.set("virtual_pad", value).unwrap();
+            assert_eq!(launch::virtual_pad_environment(&settings), value);
+        }
+    }
 }

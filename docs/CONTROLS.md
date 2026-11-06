@@ -256,3 +256,105 @@ Run with the default file first, then with `triggers-as-pedals.toml`.
    This is the open question the owner test answers; record the result in the journal.
 7. Edit the file to break it (for example `cross = ["xinput:Q"]`). Start the window and check that
    the game does not start and the log shows the file, line and reason.
+
+## Virtual controller layout (TASK-185, Android)
+
+The phone's on-screen pad has its own file, **`user/virtual-pad.json`** (the `user` folder the launcher already uses for
+`settings.toml` and the saves; on Android the app's own data folder, `/data/data/<package>/user`, which is the one the
+launcher writes). The launcher edits it on the Controls page; the game reads it when it starts. It is a separate file
+from `controls.toml` on purpose: controllers, wheels and the on-screen pad are three different things, and the pad layout
+is shared by both agents through this one format.
+
+The built-in layout is [`android/virtual-pad/default-layout.json`](../android/virtual-pad/default-layout.json); the
+backend embeds the same bytes in the APK and the launcher compiles them in, so the two cannot drift. With no player file,
+or one that cannot be used, the game uses the built-in layout and logs why.
+
+### Mode (`settings.toml`)
+
+`virtual_pad` is a launcher setting, `auto` (default), `always` or `off`:
+
+- `auto`: the pad is shown only while no physical controller is connected;
+- `always`: the pad is shown even with a physical controller;
+- `off`: the pad is never shown.
+
+It is stored in the `[settings]` table of `settings.toml` like every other launcher setting (the launcher has a single
+settings table) and passed to the game at Play as **`GT4_VIRTUAL_PAD=auto|always|off`**. The launcher's own API for the
+page is `get_virtual_pad` / `save_virtual_pad` / `reset_virtual_pad`; the row is drawn by the Controls page, not by
+Settings > General.
+
+### Format, version 1
+
+Coordinates are fractions of the screen in landscape, so one layout fits any phone:
+
+- `x` and `y` are the element's centre, 0..1;
+- `size` is the element's height as a fraction of the screen height, 0..1;
+- `width` is optional: the element's width as a fraction of the screen **width**. Without it the element is square
+  (`size` on both axes). The default layout's L1/L2 and R1/R2 are 0.16 of the screen width, which is what puts the pair
+  side by side.
+
+```json
+{
+  "version": 1,
+  "name": "GT4 default",
+  "opacity": 0.6,
+  "haptics": true,
+  "elements": [
+    { "id": "lstick",   "type": "stick",  "binds": "left_stick",  "x": 0.13, "y": 0.70, "size": 0.32 },
+    { "id": "dpad",     "type": "dpad",   "binds": "dpad",        "x": 0.13, "y": 0.30, "size": 0.26 },
+    { "id": "cross",    "type": "button", "binds": "cross",       "x": 0.88, "y": 0.78, "size": 0.15 },
+    { "id": "square",   "type": "button", "binds": "square",      "x": 0.80, "y": 0.66, "size": 0.15 },
+    { "id": "circle",   "type": "button", "binds": "circle",      "x": 0.96, "y": 0.66, "size": 0.15 },
+    { "id": "triangle", "type": "button", "binds": "triangle",    "x": 0.88, "y": 0.54, "size": 0.15 },
+    { "id": "l1",       "type": "button", "binds": "l1",          "x": 0.30, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "r1",       "type": "button", "binds": "r1",          "x": 0.70, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "l2",       "type": "button", "binds": "l2",          "x": 0.13, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "r2",       "type": "button", "binds": "r2",          "x": 0.87, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "select",   "type": "button", "binds": "select",      "x": 0.44, "y": 0.92, "size": 0.09, "width": 0.11 },
+    { "id": "start",    "type": "button", "binds": "start",       "x": 0.56, "y": 0.92, "size": 0.09, "width": 0.11 }
+  ]
+}
+```
+
+Field rules:
+
+- `type` is `button`, `dpad` or `stick`;
+- a `button` binds one of `cross`, `circle`, `square`, `triangle`, `l1`, `r1`, `l2`, `r2`, `l3`, `r3`, `select`, `start`;
+- a `dpad` binds `dpad`;
+- a `stick` binds `left_stick` or `right_stick`, and may carry `deadzone` (0..0.5, default 0.08);
+- each element may carry `"visible": false` and its own `opacity` (0..1) over the layout's;
+- unknown fields are ignored (a later version of the format), an unknown `binds` drops that element with a log line.
+
+Buttons are digital in version 1: full pressure (255) while held. A stick reports both axes, 0..255 with 128 at rest,
+inside a circular range with the dead zone above; it is relative to where the thumb lands and recentres on release.
+
+The file is replaced atomically (a temporary `virtual-pad.json.tmp` renamed over it), so a crash or a full disk leaves
+either the old layout or the new one. A file whose `version` is above 1 is kept untouched (a newer launcher wrote it) and
+the editor refuses to save over it.
+
+### The F7 corner
+
+The F7/F8 report button lives in the top-left corner of the game on Android (44dp at an 8dp margin, clear of the display
+cutout and the system bars). The editor draws that corner as a reserved zone (5% of the width, 13% of the height) and
+warns when an element overlaps it — more than a rounded edge on both axes. The warning does not block Save: the player may
+prefer the button somewhere else, but the corner is meant to stay free.
+
+### The editor (launcher)
+
+Controls > Virtual controller > **Edit layout** opens a full-screen landscape editor over a dimmed race scene:
+
+- the element list (one chip per button) and the canvas; a tap or Tab or the D-pad selects, A on a chip grabs the element;
+- touch drag moves; a pinch or the corner handle resizes; the arrows (keyboard) or the left stick (pad) move the selected
+  element; Shift+arrow or LB/RB resize; snap to grid (2%) is on by default;
+- the selected element's size, width (wide buttons), opacity and shown/hidden; the layout's global opacity, vibration and
+  snap; Undo (30 steps), Reset to default (loads the built-in layout into the editor), Save, Cancel (asks before losing
+  changes);
+- the 20:9, 16:9 and 21:9 previews reflow the same fractions; they never rewrite coordinates;
+- elements are clamped inside the screen while they are moved or resized here. A layout the player already has is shown as
+  it is: the editor never rewrites coordinates it was not asked to change.
+
+### Checks
+
+`cargo test --workspace` (the core's `virtual_pad` tests and the launcher's flow-audit test write and read a real file),
+the focus checks in both languages (the section, the mode, the opacity, the whole editor with keyboard and pad,
+the F7 warning, Undo, the previews, Save, Cancel and Reset) and nav-test (the pure layout rules: rectangles, clamping,
+resizing, snapping, overlaps and the contract's validation).

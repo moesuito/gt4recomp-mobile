@@ -36,6 +36,7 @@ pub mod update;
 pub mod version;
 pub mod version_list;
 pub mod versions;
+pub mod virtual_pad;
 pub mod wheel;
 pub mod wheel_capture;
 pub mod wheel_identity;

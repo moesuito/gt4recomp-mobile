@@ -96,3 +96,55 @@ Settings > About > Export logs saves one zip through the system's "save as" (lat
 logs, the newest game logs, the game exits and crash texts, `settings.toml` and `system.txt` with the phone's model,
 Android version, SoC, memory, display and refresh rate, Vulkan device and driver, and Vulkan features). Over USB:
 `adb logcat -s GT4Recomp-launcher GT4Recomp-game`.
+
+## The on-screen virtual pad (TASK-185)
+
+Owner (2026-11-06): a first-hand controller for GT4 on a phone. It is drawn over the game picture only while no physical
+controller is connected, and stops contributing input the moment one is.
+
+| Piece | Where |
+|---|---|
+| The layout file the editor writes and the game reads | `<user>/virtual-pad.json` (`<user>` is the launcher's user folder, the one that holds `config/settings.toml`: `/data/data/<package>/user` on Android; the external `files/user` folder is tried too) |
+| The built-in default, byte for byte the contract's JSON | `android/virtual-pad/default-layout.json`, packaged as the APK asset `assets/default-layout.json` (the Gradle `assets.srcDir` names that folder) |
+| Setting and environment | `[controls] virtual_pad = "auto" \| "always" \| "off"` in `settings.toml` (default `auto`); the launcher passes `GT4_VIRTUAL_PAD` at Play (`gt4l_core::launch::virtual_pad_environment`) |
+| Drawing and touch | `GameActivity`'s `VirtualPadView.kt`: outlined shapes, the PlayStation symbols on the face buttons, multi-touch, a stick that follows the thumb and recentres, light haptics when the layout asks for them |
+| Layout model, maths and merge | `native/virtual_pad.hpp` / `.cpp` (pure C++), checked by the `native_virtual_pad` CTest fixture |
+| The JNI seam | `native/window_sdl.cpp` (`nativeVirtualPadLoad/Geometry/FromPlayer/Binds/Touch/Active`) |
+
+**The input path.** A touch on an element calls `nativeVirtualPadTouch(element, dx, dy, down)`; `gt4::vpad::Pad` turns the
+element's `binds` into buttons at full pressure (255) and sticks into the two analog bytes, 128 at rest. At every guest
+VBlank `on_vblank` merges that contribution into the state `ControllerInput` polled from the physical pad
+(`gt4::vpad::merge`: buttons OR, a pressure takes the higher value, each stick axis takes the value further from rest) and
+calls `ps2::set_pad_buttons/axis/pressure` once. The game reads port 1 and never learns which of the two produced a value;
+an input recording keeps the merged state, so a replay drives what the player saw.
+
+**The stick.** Its offset is measured from where the thumb landed inside the element, not from the centre, so a touch
+slightly off-centre still starts at rest. The vector is clamped to the circle, a dead zone (`deadzone`, 0.08 by default,
+per element allowed) is skipped and the travel from it to the edge scales to 0..127. The d-pad is read from the touch's
+position relative to its centre (a third of the travel per direction, diagonals included).
+
+**Visibility.** `auto` follows Android's input devices through `InputManager.InputDeviceListener` (`onInputDeviceAdded`,
+`onInputDeviceRemoved`, `onInputDeviceChanged`) and the state at start; `always` ignores them; `off` never builds the
+overlay. Every change is one line in logcat (`GT4Recomp-game`) and, through the native side, in the game log:
+`virtual pad shown: no controller`, `virtual pad hidden: Xbox Wireless Controller connected`, `virtual pad shown: always
+(GT4_VIRTUAL_PAD=always)`. A hidden pad releases everything it held, so no button can stay pressed behind a controller.
+
+**Logs worth knowing.**
+- `virtual pad mode: auto (GT4_VIRTUAL_PAD=auto)` — the mode of the session.
+- `virtual pad layout: player layout: 12 elements, "GT4 default"` — which text was used; a broken file says
+  `player layout is not usable (<reason>); the default is used`, an unknown `binds` or a clamped coordinate says so too.
+- `[vpad] cross down`, `[vpad] lstick x=255 y=128`, `[vpad] lstick centred` — the states the game's pad took, written by
+  the game thread at the VBlank where it applies the pad.
+
+**Later: layouts per game context.** The layout model and the input mapping are deliberately separate. A later task adds a
+context (menu, racing, replay) by choosing another `gt4::vpad::Layout` — `Pad::set_layout` takes one at any time, the
+elements' `binds` are what the input path reads, and nothing in `on_vblank`, the merge or the JNI seam changes. The
+activity would ask for the new geometry (`nativeVirtualPadGeometry`) and redraw; the file format keeps room for named
+layouts (`version`, `name`).
+
+**Evidence on the emulator (TASK-185, `build/evidence/t185/`).** The pad over the game picture with no controller, a held
+Cross and a moved stick, the same session with a reported controller hiding it, a two-element player layout and the broken
+file falling back to the default. The emulator renders through software Vulkan (`-gpu lavapipe`) and the host was shared
+with other agents during the run, so the guest ran at about 0.4 VBlanks/s (the F8 report: `EE gs_drain ms/frame=2767`,
+`[core2] draw=1111 ms`); the guest reaching an input-driven screen was not attempted for that reason. On the owner's phone
+the same code path runs at the 60 VBlanks/s measured for TASK-180.

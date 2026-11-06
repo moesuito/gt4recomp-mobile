@@ -90,6 +90,12 @@ impl Platform {
         matches!(self, Platform::Windows)
     }
 
+    /// Whether the launcher offers the virtual controller and its layout editor (TASK-185). A phone is the only place
+    /// the on-screen pad is drawn (the game reads `GT4_VIRTUAL_PAD` there); the Windows launcher has no row for it.
+    pub const fn offers_virtual_pad(self) -> bool {
+        matches!(self, Platform::Android)
+    }
+
     /// Whether the launcher downloads and installs its own updates. Android only checks and opens the download page.
     pub const fn installs_updates(self) -> bool {
         matches!(self, Platform::Windows)
@@ -218,6 +224,10 @@ mod tests {
         // TASK-180 test3 (owner): wheels are Windows only; Android offers pads only, so no Wheel page.
         assert!(!android.offers_wheel_page());
         assert!(Platform::Windows.offers_wheel_page());
+        // TASK-185: the on-screen pad is a phone feature.
+        assert!(android.offers_virtual_pad());
+        assert!(!Platform::Windows.offers_virtual_pad());
+        assert!(android.offers("virtual_pad"), "the Auto/Always/Off row is offered on Android");
         assert!(android.offers("performance_hud"), "the HUD draws on Android since test2");
         for row in ["graphics_card", "monitor", "resolution", "fullscreen", "discord_rich_presence"] {
             assert!(!android.offers(row), "{row}");

@@ -36,6 +36,9 @@ cancel_capture
 reset_binding
 assign_binding
 reset_all_bindings
+get_virtual_pad
+save_virtual_pad
+reset_virtual_pad
 get_wheel_config
 set_wheel_setting
 apply_wheel_preset

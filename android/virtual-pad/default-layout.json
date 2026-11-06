@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "GT4 default",
+  "opacity": 0.6,
+  "haptics": true,
+  "elements": [
+    { "id": "lstick",   "type": "stick",  "binds": "left_stick",  "x": 0.13, "y": 0.70, "size": 0.32 },
+    { "id": "dpad",     "type": "dpad",   "binds": "dpad",        "x": 0.13, "y": 0.30, "size": 0.26 },
+    { "id": "cross",    "type": "button", "binds": "cross",       "x": 0.88, "y": 0.78, "size": 0.15 },
+    { "id": "square",   "type": "button", "binds": "square",      "x": 0.80, "y": 0.66, "size": 0.15 },
+    { "id": "circle",   "type": "button", "binds": "circle",      "x": 0.96, "y": 0.66, "size": 0.15 },
+    { "id": "triangle", "type": "button", "binds": "triangle",    "x": 0.88, "y": 0.54, "size": 0.15 },
+    { "id": "l1",       "type": "button", "binds": "l1",          "x": 0.30, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "r1",       "type": "button", "binds": "r1",          "x": 0.70, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "l2",       "type": "button", "binds": "l2",          "x": 0.13, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "r2",       "type": "button", "binds": "r2",          "x": 0.87, "y": 0.10, "size": 0.12, "width": 0.16 },
+    { "id": "select",   "type": "button", "binds": "select",      "x": 0.44, "y": 0.92, "size": 0.09, "width": 0.11 },
+    { "id": "start",    "type": "button", "binds": "start",       "x": 0.56, "y": 0.92, "size": 0.09, "width": 0.11 }
+  ]
+}

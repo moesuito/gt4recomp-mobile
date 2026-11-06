@@ -924,6 +924,9 @@ pub fn run() {
             crate::commands::reset_binding,
             crate::commands::assign_binding,
             crate::commands::reset_all_bindings,
+            crate::commands::get_virtual_pad,
+            crate::commands::save_virtual_pad,
+            crate::commands::reset_virtual_pad,
             crate::wheel_page::get_wheel_config,
             crate::wheel_page::set_wheel_setting,
             crate::wheel_page::apply_wheel_preset,
@@ -1198,6 +1201,9 @@ pub fn play(shared: &Shared) -> Result<(), String> {
     if controls_path.exists() {
         plan.environment.push(("GT4_CONTROLS_FILE".into(), controls_path.display().to_string()));
     }
+    // TASK-185: the on-screen virtual pad's mode (auto, always, off) from the launcher's Controls page. The game reads the
+    // layout file itself (the user folder), so only the mode travels here.
+    plan.environment.push(("GT4_VIRTUAL_PAD".into(), launch::virtual_pad_environment(&settings).to_string()));
     if let Some(choice) = launch::controller_environment(&settings) {
         plan.environment.push(("GT4_PAD".into(), choice));
     }
