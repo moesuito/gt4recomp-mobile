@@ -92,6 +92,39 @@ const RENDERER_CHOICES: &[Choice] = &[
 
 /// The ARMSX2 GS resolution multipliers (private Android test build): whole and fractional scales. PCSX2 applies a
 /// fractional multiplier only with ExtendedUpscalingMultipliers on, which `armsx2_gs_config_text` writes.
+/// The API the ARMSX2 GS runs on. OpenGL ES is its Android default; Vulkan is experimental (see the help text).
+pub const ARMSX2_API_GLES: &str = "ogl";
+pub const ARMSX2_API_VULKAN: &str = "vk";
+
+const ARMSX2_API_CHOICES: &[Choice] = &[
+    Choice { value: ARMSX2_API_GLES, label: "OpenGL ES", selectable: true },
+    Choice { value: ARMSX2_API_VULKAN, label: "Vulkan (experimental)", selectable: true },
+];
+
+/// The ARMSX2 GS texture filter (PCSX2's `filter` key: 0 nearest, 1 bilinear forced, 2 PS2, 3 forced but sprites excluded).
+const ARMSX2_FILTER_CHOICES: &[Choice] = &[
+    Choice { value: "nearest", label: "Nearest", selectable: true },
+    Choice { value: "bilinear-ps2", label: "Bilinear (PS2)", selectable: true },
+    Choice { value: "bilinear-forced", label: "Bilinear (forced)", selectable: true },
+    Choice { value: "bilinear-forced-sprite-excluded", label: "Bilinear (sprites excluded)", selectable: true },
+];
+
+/// The ARMSX2 GS anisotropic filtering (`MaxAnisotropy`, the plain number).
+const ARMSX2_ANISO_CHOICES: &[Choice] = &[
+    Choice { value: "off", label: "Off", selectable: true },
+    Choice { value: "2", label: "2x", selectable: true },
+    Choice { value: "4", label: "4x", selectable: true },
+    Choice { value: "8", label: "8x", selectable: true },
+    Choice { value: "16", label: "16x", selectable: true },
+];
+
+/// The ARMSX2 GS dithering (`dithering_ps2`: 0 off, 1 scaled, 2 unscaled as the PS2).
+const ARMSX2_DITHER_CHOICES: &[Choice] = &[
+    Choice { value: "off", label: "Off", selectable: true },
+    Choice { value: "unscaled", label: "PS2 (unscaled)", selectable: true },
+    Choice { value: "scaled", label: "Scaled", selectable: true },
+];
+
 const ARMSX2_SCALE_CHOICES: &[Choice] = &[
     Choice { value: "1", label: "1x (native)", selectable: true },
     Choice { value: "1.25", label: "1.25x", selectable: true },
@@ -206,13 +239,83 @@ pub const SETTINGS: &[SettingDef] = &[
     SettingDef {
         id: "armsx2_scale",
         page: Page::Graphics,
-        group: "Renderer",
+        group: "ARMSX2 GS",
         title: "ARMSX2 GS resolution",
         info: "Only for the ARMSX2 GS renderer (private test build): the internal resolution multiplier. Fractional \
                values (1.25x to 1.75x) and 2.5x need a graphics driver that supports them. Extra GS lines the player adds \
                go into armsx2-gs-extra.ini, beside armsx2-gs.ini in the app's files folder.",
         kind: Kind::Choice(ARMSX2_SCALE_CHOICES),
-        default: "1",
+        default: "2",
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_api",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "ARMSX2 GS graphics API",
+        info: "OpenGL ES is the API the ARMSX2 GS uses on Android by default: it is the one ARMSX2 keeps supported there.                Vulkan is experimental: ARMSX2 keeps it out of its Android renderer choice because of blending bugs, and                this private build may not carry it at all (the game log then says so and stays on OpenGL ES).",
+        kind: Kind::Choice(ARMSX2_API_CHOICES),
+        default: ARMSX2_API_GLES,
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_fxaa",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "Anti-aliasing (FXAA)",
+        info: "Fast approximate anti-aliasing applied to the finished picture by the ARMSX2 GS. Off by default: it costs                a little graphics time and softens the image slightly.",
+        kind: Kind::Toggle,
+        default: "off",
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_cas",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "Sharpening (CAS)",
+        info: "Contrast adaptive sharpening of the finished picture, the ARMSX2 GS's own sharpening filter. Off by default.",
+        kind: Kind::Toggle,
+        default: "off",
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_cas_strength",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "Sharpening amount",
+        info: "Strength of the ARMSX2 GS sharpening (0 to 100). Used when sharpening is on.",
+        kind: Kind::Steps { min: 0, max: 100, step: 1 },
+        default: "50",
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_filter",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "Texture filtering",
+        info: "How the ARMSX2 GS samples game textures. Bilinear (PS2) follows the console; Nearest is the sharpest and                the most aliased; the forced modes override what the game asks for.",
+        kind: Kind::Choice(ARMSX2_FILTER_CHOICES),
+        default: "bilinear-ps2",
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_aniso",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "Anisotropic filtering",
+        info: "Anisotropic filtering of the ARMSX2 GS. Off keeps the frame time budget; 16x is the sharpest and costs                graphics time.",
+        kind: Kind::Choice(ARMSX2_ANISO_CHOICES),
+        default: "off",
+        connected: true,
+    },
+    SettingDef {
+        id: "armsx2_dither",
+        page: Page::Graphics,
+        group: "ARMSX2 GS",
+        title: "Dithering",
+        info: "The dithering the ARMSX2 GS applies. PS2 (unscaled) is the console's own, which is what the original                picture has; Off shows the bands the dithering hides; Scaled grows it with the resolution.",
+        kind: Kind::Choice(ARMSX2_DITHER_CHOICES),
+        default: "unscaled",
         connected: true,
     },
     SettingDef {

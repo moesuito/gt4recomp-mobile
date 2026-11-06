@@ -8,6 +8,7 @@
 // declared in gt4gs_api.h.
 
 #include "gt4gs_host.h"
+#include "gt4gs_hud.h"
 
 #include "common/Assertions.h"
 #include "common/Console.h"
@@ -572,6 +573,7 @@ int gt4gs_start(const Gt4gsStartInfo *info) {
   s_serial = info->serial != nullptr && *info->serial != '\0' ? info->serial : "SCUS-97328";
   s_preferred_backend = info->preferred_backend;
   s_log_performance = info->log_performance != 0;
+  SetHudMode(info->hud_mode);
   s_error_text.clear();
   s_started.store(true);
 
@@ -604,7 +606,16 @@ int gt4gs_start(const Gt4gsStartInfo *info) {
   GSRendererType renderer = have_vulkan ? GSRendererType::VK : GSRendererType::OGL;
   switch (s_preferred_backend) {
     case 0: renderer = GSRendererType::OGL; break;
-    case 1: renderer = have_vulkan ? GSRendererType::VK : GSRendererType::OGL; break;
+    case 1:
+      if (have_vulkan) {
+        renderer = GSRendererType::VK;
+      } else {
+        // Asked for Vulkan, but this library carries only the OpenGL ES back end: say so and keep a picture.
+        LogLine("Vulkan was requested but this library has no Vulkan back end (no shader compiler built in); "
+                "staying on OpenGL ES");
+        renderer = GSRendererType::OGL;
+      }
+      break;
     case 2: renderer = GSRendererType::Null; break;  // deviceless: no GPU context and no picture, a diagnosis path
     default: break;
   }
@@ -650,7 +661,8 @@ int gt4gs_start(const Gt4gsStartInfo *info) {
     return 0;
   }
   if (!WaitForBoot()) return -1;
-  LogLine("GS ready: %s, serial %s", s_renderer_name.c_str(), s_serial.c_str());
+  LogLine("GS ready: %s, serial %s, performance HUD %s", s_renderer_name.c_str(), s_serial.c_str(),
+          HudMode() == 0 ? "off" : (HudMode() == 1 ? "fps only" : "full"));
   return 0;
 }
 

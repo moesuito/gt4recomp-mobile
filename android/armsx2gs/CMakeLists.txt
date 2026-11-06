@@ -8,11 +8,13 @@ set(GT4GS_SOURCES
     gt4gs_host.cpp
     gt4gs_queue.cpp
     gt4gs_replayer.cpp
+    gt4gs_hud.cpp
     android_stubs.cpp
     gt4gs_api.h
     gt4gs_host.h
     gt4gs_queue.h
-    gt4gs_replayer.h)
+    gt4gs_replayer.h
+    gt4gs_hud.h)
 
 add_library(gt4gs SHARED ${GT4GS_SOURCES})
 

@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "gt4gs_host.h"
+#include "gt4gs_hud.h"
 #include "gt4gs_queue.h"
 
 // The CPU provider object (defined at the end of this file; the VMManager hook names it at global scope).
@@ -151,11 +152,12 @@ const char *ReadbackModeName() {
 void PostStats() {
   const double frames = static_cast<double>(std::max<u64>(1, s_frame - s_report_frame));
   Console.WriteLn("(gt4gs) vsync %llu: stream %.0f bytes/frame; readbacks (%s) %llu; GS thread %.3f ms/frame (%.1f%%); GPU "
-                  "%.3f ms (%.1f%%)",
+                  "%.3f ms (%.1f%%); HUD %s",
                   static_cast<unsigned long long>(s_frame), (s_bytes - 0) / frames, ReadbackModeName(),
                   static_cast<unsigned long long>(s_readbacks), PerformanceMetrics::GetGSThreadAverageTime(),
                   PerformanceMetrics::GetGSThreadUsage(), PerformanceMetrics::GetGPUAverageTime(),
-                  PerformanceMetrics::GetGPUUsage());
+                  PerformanceMetrics::GetGPUUsage(),
+                  HudMode() == 0 ? "off" : (HudMode() == 1 ? "fps only" : "full"));
   s_report_frame = s_frame;
 }
 

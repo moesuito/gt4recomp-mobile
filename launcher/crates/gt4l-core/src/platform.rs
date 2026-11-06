@@ -33,7 +33,16 @@ const LAUNCHER_ONLY_ROWS: &[&str] = &["launcher_gpu"];
 
 /// Rows that exist only on one platform. `armsx2_scale` is the private Android test build's ARMSX2 GS multiplier; the
 /// renderer itself is offered on both platforms (GSdx and CoreGS 2.0 on Windows, CoreGS 2.0 and ARMSX2 on Android).
-const ANDROID_ONLY_ROWS: &[&str] = &["armsx2_scale"];
+const ANDROID_ONLY_ROWS: &[&str] = &[
+    "armsx2_scale",
+    "armsx2_api",
+    "armsx2_fxaa",
+    "armsx2_cas",
+    "armsx2_cas_strength",
+    "armsx2_filter",
+    "armsx2_aniso",
+    "armsx2_dither",
+];
 
 impl Platform {
     /// The platform of this build.
@@ -169,8 +178,8 @@ mod tests {
     #[test]
     fn windows_offers_every_row_and_forces_nothing() {
         for definition in crate::SETTINGS {
-            // The ARMSX2 GS resolution row is the private Android test build's; Windows has no such renderer.
-            if definition.id == "armsx2_scale" {
+            // The ARMSX2 GS rows are the private Android test build's; Windows has no such renderer.
+            if definition.id.starts_with("armsx2_") {
                 assert!(!Platform::Windows.offers(definition.id));
                 continue;
             }

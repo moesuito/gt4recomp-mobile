@@ -34,8 +34,14 @@ by the same GS stream the game sends to `gt4-gs.exe` on Windows, through an in-p
   on the Adreno and the stream started, then the per-frame dump-replay overlay read a null dump and aborted (three
   identical tombstones). The overlay and the end-of-present UI block are skipped while the stream runs (this library has
   no UI), and the overlay itself returns when there is no dump. Verified in the emulator with a deviceless renderer
-  (`GT4_ARMSX2_GS_RENDERER=null`): 2,700+ VSyncs processed, no abort. Rebuilt APK: sha256
-  `8f9d10607f52ad026fbde0da531249514d99ab7376f1f3c40daa77d11a4c49ae`.
+  (`GT4_ARMSX2_GS_RENDERER=null`): 2,700+ VSyncs processed, no abort.
+- **API choice, picture options and HUD (owner, 2026-11-06).** The ARMSX2 GS rows now include the API (OpenGL ES default,
+  Vulkan experimental, with the blending-bug note) and its picture options (FXAA, CAS with amount, texture filtering,
+  anisotropic filtering, dithering), each mapped to its own `armsx2-gs.ini` key; FSR1 is not offered because it is
+  Vulkan-only in ARMSX2 and this library has no Vulkan back end (a Vulkan request falls back to OpenGL ES with a log
+  line). The Performance HUD works with the ARMSX2 GS (the library draws the panel itself, no emulator OSD) and the
+  game's F7/F8 report is untouched. Defaults for a fresh install: 2x, OpenGL ES, FXAA off, CAS off, Bilinear (PS2), no
+  anisotropic, PS2 dithering.
 
 ## Android test4: the Performance report back, TASK-182 savings on, UMA phase 1 (TASK-180, 2026-11-05 evening)
 

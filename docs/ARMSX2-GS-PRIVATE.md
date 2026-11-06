@@ -172,3 +172,59 @@ this library has graphic state but no dump file, so the overlay read a null dump
   VSync before). The GS thread cost was 0.6 ms/frame at 2x scale.
 - Normal GL run on the emulator: unchanged, it stops at the emulator's guest OpenGL ES 3.0 (the uber shader needs 3.1)
   and returns cleanly — the emulator cannot show the Adreno path.
+
+## API choice and picture options (owner, 2026-11-06)
+
+**API.** A new row, "ARMSX2 GS graphics API", with **OpenGL ES** (default) and **Vulkan (experimental)**, plus one help
+line: ARMSX2 keeps Vulkan out of its Android renderer choice because of blending bugs. It maps to
+`GT4_ARMSX2_GS_RENDERER` (`ogl`/`vk`) and from there to the library's existing back-end choice. This library is built
+without the Vulkan back end (no shaderc sources locally), so asking for Vulkan **falls back to OpenGL ES with a line in
+`game.log`** ("Vulkan was requested but this library has no Vulkan back end…") instead of failing; a build that carries
+Vulkan and fails at device creation reports the failure in `game.log` and stops the game the same way a GS failure always
+does.
+
+**Picture options.** Each has its own row and its own key in `armsx2-gs.ini` (PCSX2's own keys):
+
+| Row | Key | Values written |
+|---|---|---|
+| Anti-aliasing (FXAA) | `fxaa` | `true` / `false` |
+| Sharpening (CAS) | `CASMode` | `1` (sharpen only) / `0` |
+| Sharpening amount | `CASSharpness` | 0..100 |
+| Texture filtering | `filter` | 0 nearest, 1 bilinear forced, 2 PS2, 3 forced but sprites excluded |
+| Anisotropic filtering | `MaxAnisotropy` | 0, 2, 4, 8, 16 |
+| Dithering | `dithering_ps2` | 0 off, 1 scaled, 2 unscaled (PS2) |
+
+The rows are written into the `[EmuCore/GS]` block of `armsx2-gs.ini`; the owner's `armsx2-gs-extra.ini` is applied after
+it by the library, so his own lines still override everything.
+
+**FSR1: not offered.** This ARMSX2 version does have it (and Snapdragon Game Super Resolution too), but both are compute
+passes that ARMSX2 implements **only on Vulkan**, and this library has no Vulkan back end. Offering them here would be a
+switch that does nothing.
+
+**Defaults for the S23** (a fresh install): ARMSX2 GS at **2x**, OpenGL ES, FXAA off, CAS off (amount 50), texture
+filtering Bilinear (PS2), anisotropic off, dithering PS2 (unscaled). A stored choice is always kept.
+
+## Performance HUD with the ARMSX2 GS (owner, 2026-11-06)
+
+The launcher's Performance HUD row (Off / FPS only / Full) works with both renderers now. With the ARMSX2 GS the library
+draws the panel itself (via the ImGui context it already has) over the picture it presents; it never draws the emulator's
+own OSD, and the `debug` text that fix2 removed stays removed. Lines, with the label each number really is:
+
+- `ARMSX2 GS  <API>  <scale>x` and the SoC name (as Android reports it);
+- `FPS` and `Frame` (the emulator's frame timing);
+- `GS` — this library's GS worker: ms per frame and its share of a core;
+- `GPU` — the graphics device's own timer, `n/a` when the driver does not report one;
+- `CPU` — the game process's share of all threads (the same rule as the desktop HUD);
+- `Mem` — the process's resident memory.
+
+The game's F7/F8 performance report and its touch button are the game's own and keep working unchanged; the HUD's CoreGS
+"Report:" line has no equivalent here and is not shown.
+
+## Performance Mode report (no work this round)
+
+The ARMSX2 sink is fed **after** the game-side producer: the stream leaves the game at the GIF render point (and at the
+privileged-register and VSYNC points), inside `gs_stream_client`, so the individual effect toggles built on
+`task/180-android-emulator` (draws left out, flare readbacks answered as hidden) change the records *before* they reach
+the ARMSX2 library. Nothing is needed on this side for them: the sink forwards whatever the game sends, in order, and the
+readback protocol is the game's (a readback answered locally never reaches the library). The two-frame back-pressure is
+unaffected.

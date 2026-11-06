@@ -48,6 +48,7 @@ struct StartInfo {
   const char *serial;
   int preferred_backend;
   int log_performance;
+  int hud_mode;
 };
 
 struct Library {
@@ -164,6 +165,14 @@ bool start(std::string &error) {
   info.serial = "SCUS-97328";
   info.preferred_backend = backend;
   info.log_performance = std::getenv("GT4_ARMSX2_GS_PERF") != nullptr ? 1 : 0;
+  // The launcher's Performance HUD setting: off, frame rate only or the full panel (drawn by the library, never the
+  // emulator's own OSD).
+  const char *hud = std::getenv("GT4_ARMSX2_GS_HUD");
+  info.hud_mode = 0;
+  if (hud != nullptr) {
+    if (std::strcmp(hud, "fps") == 0) info.hud_mode = 1;
+    else if (std::strcmp(hud, "1") == 0 || std::strcmp(hud, "full") == 0) info.hud_mode = 2;
+  }
   std::fprintf(stderr, "[gs] ARMSX2 GS in process: %s (%s), settings %s, extra %s, scale %s\n",
                lib.version != nullptr ? lib.version() : kLibraryName,
                lib.renderer_name != nullptr ? lib.renderer_name() : "?", config.c_str(), overrides.c_str(),

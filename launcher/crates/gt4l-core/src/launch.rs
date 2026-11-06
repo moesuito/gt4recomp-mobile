@@ -458,7 +458,68 @@ pub fn armsx2_config_text(settings: &Settings, paths: &Armsx2Paths, textures: &s
     if !text.ends_with('\n') {
         text.push('\n');
     }
+    // The ARMSX2 GS picture options, at the end of the [EmuCore/GS] block so they win over the table's own values.
+    // The owner's armsx2-gs-extra.ini is applied after this file by the library, so his lines still override everything.
+    let effects = armsx2_effect_lines(settings);
+    // The file says which renderer it is for: 12 is PCSX2's OpenGL renderer, 14 its Vulkan one.
+    let renderer = if settings.get("armsx2_api") == crate::settings::ARMSX2_API_VULKAN { 14 } else { 12 };
+    let mut out: Vec<String> = Vec::new();
+    let mut in_gs = false;
+    let mut inserted = false;
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        let is_header = trimmed.starts_with('[') && trimmed.ends_with(']');
+        if is_header && in_gs && !inserted {
+            out.extend(effects.iter().cloned());
+            inserted = true;
+        }
+        if is_header {
+            in_gs = trimmed == "[EmuCore/GS]";
+        }
+        if trimmed.starts_with("Renderer = ") {
+            out.push(format!("Renderer = {renderer}"));
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    if in_gs && !inserted {
+        out.extend(effects.iter().cloned());
+    }
+    text = out.join("\n") + "\n";
     Ok(text)
+}
+
+/// The `[EmuCore/GS]` lines of the ARMSX2 GS picture options: FXAA, CAS (mode and amount), texture filtering,
+/// anisotropic filtering and dithering, each from its launcher row. The values are the ones PCSX2's own settings
+/// file uses; the owner's extra file still overrides them, because the library applies it after this file.
+pub fn armsx2_effect_lines(settings: &Settings) -> Vec<String> {
+    let strength: u32 = settings.get("armsx2_cas_strength").parse().unwrap_or(50);
+    let filter = match settings.get("armsx2_filter") {
+        "nearest" => 0,
+        "bilinear-forced" => 1,
+        "bilinear-forced-sprite-excluded" => 3,
+        _ => 2,
+    };
+    let aniso = match settings.get("armsx2_aniso") {
+        "2" => 2,
+        "4" => 4,
+        "8" => 8,
+        "16" => 16,
+        _ => 0,
+    };
+    let dither = match settings.get("armsx2_dither") {
+        "off" => 0,
+        "scaled" => 1,
+        _ => 2,
+    };
+    vec![
+        format!("fxaa = {}", settings.is_on("armsx2_fxaa")),
+        format!("CASMode = {}", if settings.is_on("armsx2_cas") { 1 } else { 0 }),
+        format!("CASSharpness = {}", strength.min(100)),
+        format!("filter = {filter}"),
+        format!("MaxAnisotropy = {aniso}"),
+        format!("dithering_ps2 = {dither}"),
+    ]
 }
 
 /// Name of the file the game reads for a direct start (TASK-097), in the user config folder.

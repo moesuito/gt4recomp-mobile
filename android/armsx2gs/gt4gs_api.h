@@ -52,6 +52,8 @@ typedef struct Gt4gsStartInfo {
   int preferred_backend;
   // 1 asks for the performance numbers in the log every 300 VSYNCs (the game's own F8 report stays separate).
   int log_performance;
+  // The performance HUD this library draws over its picture: 0 off, 1 frame rate only, 2 the full panel.
+  int hud_mode;
 } Gt4gsStartInfo;
 
 // Starts the GS thread and boots the GS core. Returns 0 on success; on failure the message is in gt4gs_last_error().

@@ -1063,6 +1063,17 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             plan.environment.push(("GT4_ARMSX2_GS_CONFIG".into(), paths.config.display().to_string()));
             plan.environment.push(("GT4_ARMSX2_GS_OVERRIDES".into(), paths.overrides.display().to_string()));
             plan.environment.push(("GT4_ARMSX2_GS_SCALE".into(), settings.get("armsx2_scale").to_string()));
+            // The API row (OpenGL ES by default, Vulkan experimental) and the performance HUD, which the library draws
+            // itself (the game's own HUD belongs to CoreGS 2.0).
+            plan.environment.push(("GT4_ARMSX2_GS_RENDERER".into(), settings.get("armsx2_api").to_string()));
+            let hud = match settings.get("performance_hud") {
+                gt4l_core::settings::HUD_FULL => "full",
+                gt4l_core::settings::HUD_FPS_ONLY => "fps",
+                _ => "off",
+            };
+            if hud != "off" {
+                plan.environment.push(("GT4_ARMSX2_GS_HUD".into(), hud.to_string()));
+            }
         } else {
             state::log_error(&data_dirs, "graphics: the app's external files folder is unknown; ARMSX2 GS cannot start");
         }

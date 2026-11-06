@@ -254,7 +254,7 @@ fn settings_table_versioned(
         let mut row = launcher_row(definition, settings);
         // These launcher rows configure CoreGS 2.0 only (its render scale, its HUD, its vsync policy): with the ARMSX2
         // GS chosen they are hidden, and they come back with CoreGS 2.0 (owner, 2026-11-06).
-        if platform == Platform::Android && matches!(definition.id, "render_scale" | "performance_hud" | "vsync") {
+        if platform == Platform::Android && matches!(definition.id, "render_scale" | "vsync") {
             row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 });
         }
         // TASK-161: the full trigger range sits with the triggers on the Controls page (its analog rows), not on General.
@@ -272,7 +272,10 @@ fn settings_table_versioned(
             // The renderer choices belong to the platform: GSdx and CoreGS 2.0 on Windows, CoreGS 2.0 and the private
             // build's ARMSX2 GS on Android. The ARMSX2 resolution row exists only while that renderer is chosen.
             "renderer" => keep_platform_renderers(&mut row, platform),
-            "armsx2_scale" => row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS }),
+            // Every ARMSX2 GS row lives with that renderer (the UI's visible_when takes one rule: renderer here).
+            id if id.starts_with("armsx2_") => {
+                row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS });
+            }
             "vsync" if settings.get("renderer") == gt4l_core::settings::CORE_GS_20 => without_fast_vsync(&mut row),
             // TASK-135: CoreGS 2.0's own; GSdx has its overlay rows.
             "performance_hud" => row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
@@ -1023,6 +1026,46 @@ mod table_tests {
                 "{shown} follows CoreGS 2.0"
             );
         }
+    }
+
+    // Owner (2026-11-06): the ARMSX2 GS owns the API choice and the picture options; they follow the renderer and never
+    // appear on Windows.
+    #[test]
+    fn armsx2_rows_follow_the_renderer_choice() {
+        let armsx2_rows = [
+            "armsx2_scale",
+            "armsx2_api",
+            "armsx2_fxaa",
+            "armsx2_cas",
+            "armsx2_cas_strength",
+            "armsx2_filter",
+            "armsx2_aniso",
+            "armsx2_dither",
+        ];
+        let mut armsx2 = Settings::default();
+        armsx2.set("renderer", gt4l_core::settings::ARMSX2_GS).unwrap();
+        let table = settings_table_for(Platform::Android, &armsx2, &Controls::default(), &[], &[], false);
+        for id in armsx2_rows {
+            assert!(ids(&table).iter().any(|row| row == id), "{id} is an ARMSX2 row");
+            assert_eq!(
+                row(&table, id)["visible_when"],
+                json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS }),
+                "{id} follows the ARMSX2 GS"
+            );
+        }
+        assert_eq!(row(&table, "armsx2_api")["current"], "ogl", "OpenGL ES is the default API");
+        let mut coregs = Settings::default();
+        coregs.set("renderer", gt4l_core::settings::CORE_GS_20).unwrap();
+        let table = settings_table_for(Platform::Android, &coregs, &Controls::default(), &[], &[], false);
+        for id in armsx2_rows {
+            assert_eq!(
+                row(&table, id)["visible_when"],
+                json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS }),
+                "{id} hides under CoreGS 2.0"
+            );
+        }
+        let windows = settings_table_for(Platform::Windows, &armsx2, &Controls::default(), &[], &[], false);
+        assert!(!ids(&windows).iter().any(|id| id.starts_with("armsx2_")), "no ARMSX2 row on Windows");
     }
 
     // TASK-180 (owner, test1 feedback; test3): the phone's screen is the output, and the row's first position is 1x there.
