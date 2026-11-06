@@ -1,3 +1,26 @@
+## Round 6: the two GSdx rows, Spec II on both renderers, the GPU rules (2026-11-06)
+
+- **Merge:** `upstream/task/180-android-emulator` at `224f5460` (TASK-186 correction: Blending accuracy and Readbacks
+  as GSdx player rows, flares hidden only on the game side, effect rows replacing Performance Mode, schema 10; TASK-180b:
+  the Spec II capsule `sif.cpp` and `GT4_TARGET_SPEC2`).
+- **The two rows under GSdx (ARMSX2):** Blending accuracy (`accurate_blending_unit`, High = 3) and Readbacks
+  (`HWDownloadMode`, Accurate = 0, all five values) are shown on Android under the ARMSX2 GS and hidden under CoreGS 2.0.
+  The emulator's `armsx2-gs.ini` carried `accurate_blending_unit = 3` and `HWDownloadMode = 0` after a Play. The Android
+  plan now sends `GT4_GS_HIDE_FLARES` (and `GT4_GS_READBACK_LOCAL` with the flares off), the same game-side answer as the
+  PC GSdx path; the download mode stays Accurate unless the player changes it.
+- **Spec II PT-BR:** through the picker-installed image, GSdx (ARMSX2) on Vulkan reached the Mode Selection menu
+  (`build/evidence/r6/28-spec2-menu.png`) after the language and name steps; CoreGS 2.0 reached the spec-II title screen
+  (`build/evidence/r6/34-spec2-coregs-menu.png`). No ARMSX2-side fix was needed: the upstream TASK-180b changes (the
+  asynchronous FILEIO `sif.cpp` and `GT4_TARGET_SPEC2`) are what made the game boot. v2.00 still reaches its title screen
+  under GSdx (ARMSX2) Vulkan (`build/evidence/r6/47-v200-final2.png`).
+- **GPU rules:** the ARMSX2 GS keeps its Auto API rule (Vulkan on Adreno, Mali Valhall v9/v11, MT6897 and GL drivers
+  without an in-tile self-read; OpenGL ES elsewhere), its per-model tuning tables (Adreno, Mali, PowerVR) and its
+  35-rule driver-bug database (Arm, PanVK, Qualcomm, Turnip, Imagination, ANGLE). The API row now defaults to Auto and
+  sends no backend, so the launcher no longer overrides the library's choice; OpenGL ES and Vulkan remain explicit
+  choices. README has the GPU support section.
+- **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionCode **103001504**, 225,055,369 bytes, sha256
+  `3e0ac7272c1a911d17ed7d391d4dfbcc05a08d4a940db9e2d9250595c484e947`, owner's release key; symbols refreshed.
+
 ## Source repository for the ARMSX2 Android build: gt4recomp-mobile (2026-11-06)
 
 The private ARMSX2 GS work now has its own source-only repository, `moesuito/gt4recomp-mobile` (GPL-3.0-or-later):
