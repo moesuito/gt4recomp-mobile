@@ -1,3 +1,20 @@
+## Source repository for the ARMSX2 Android build: gt4recomp-mobile (2026-11-06)
+
+The private ARMSX2 GS work now has its own source-only repository, `moesuito/gt4recomp-mobile` (GPL-3.0-or-later):
+
+- **Tracked import.** ARMSX2 at `1049db37fb` lives in `third_party/armsx2/` (7,200 files, about 120 MiB): `common`,
+  `pcsx2`, the 30 Android 3rdparty trees, the CMake modules, the shaders/fonts/GameIndex and the GPL text. No Qt/iOS/
+  prebuilt trees, no sample trees, no file over 50 MB. The import is two commits (pristine, then the round 1-5 patches),
+  documented in `docs/ARMSX2-GS-IMPORT.md`.
+- **Shader compilers.** shaderc already ships inside ARMSX2; its three Khronos dependencies are fetched by
+  `tools/fetch_armsx2_shader_deps.py` at the DEPS-pinned revisions and are git-ignored.
+- **Build proof.** A clean `libgt4gs.so` built from the tracked tree (Vulkan + GLES, no JIT) has 0 vixl symbols and 0
+  recompiler entries; the APK packaged with it (versionCode 103001503, sha256 `cc20fbb6...fdbe`) is byte-identical in
+  its `libgt4gs.so` to the one that ran v2.00 through the ARMSX2 Vulkan renderer in the emulator on 2026-11-06
+  (`build/evidence/t180-tracked-import/`).
+- **Repository hygiene.** 8,851 tracked files, 154.9 MiB; no game data, no signing keys, no APKs, no build outputs. The
+  only binary is the launcher's Gradle wrapper jar.
+
 ## Private GPL test build, round 5: the HUD's font, the no-JIT link, the Spec II picture (private/armsx2-gs-s23, 2026-11-06)
 
 **PRIVATE, PCSX2-tainted, GPL-3.0+, never distributed and never merged.** On top of round 4:
