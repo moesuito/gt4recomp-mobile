@@ -20,6 +20,8 @@
 #include "GS/Renderers/HW/GSTextureReplacements.h"
 #include "AutoTune/AutoTuneApplier.h"
 #include "GSDumpReplayer.h"
+
+#include "GT4GSStreamHook.h"
 #include "GameDatabase.h"
 #include "GameList.h"
 #include "Host.h"
@@ -1673,6 +1675,13 @@ bool VMManager::AutoDetectSource(const std::string& filename, Error* error)
 {
 	if (!filename.empty())
 	{
+		if (gt4gs::IsActive())
+		{
+			// GT4Recomp private Android build: libgt4gs prepared the stream; the filename only names it.
+			CDVDsys_ChangeSource(CDVD_SourceType::NoDisc);
+			return gt4gs::Initialize(error);
+		}
+
 		if (!FileSystem::FileExists(filename.c_str()))
 		{
 			Error::SetStringFmt(error, TRANSLATE_FS("VMManager", "Requested filename '{}' does not exist."), filename);
@@ -3596,6 +3605,12 @@ void VMManager::LogCPUCapabilities()
 void VMManager::InitializeCPUProviders()
 {
 	pxAssert(!s_cpu_providers_initialized);
+#ifdef GT4GS_NO_JIT
+	// GT4GS_NO_JIT (private Android build): the recompiler sources are not part of the library, so there is nothing to
+	// initialize; every provider is an interpreter.
+	Console.WriteLn("GT4GS_NO_JIT: no recompiler providers");
+	return;
+#else
 	if (!SysMemory::HasCodeMemory())
 	{
 		Console.Warning("Executable code memory is unavailable; skipping recompiler provider initialization");
@@ -3610,6 +3625,7 @@ void VMManager::InitializeCPUProviders()
 
 	VifUnpackSSE_Init();
 	s_cpu_providers_initialized = true;
+#endif
 }
 
 void VMManager::ShutdownCPUProviders()
@@ -3617,6 +3633,7 @@ void VMManager::ShutdownCPUProviders()
 	if (!s_cpu_providers_initialized)
 		return;
 
+#ifndef GT4GS_NO_JIT
 	if (newVifDynaRec)
 	{
 		dVifRelease(1);
@@ -3628,6 +3645,7 @@ void VMManager::ShutdownCPUProviders()
 
 	psxRec.Shutdown();
 	recCpu.Shutdown();
+#endif
 
 	s_cpu_providers_initialized = false;
 }
@@ -3636,7 +3654,7 @@ void VMManager::UpdateCPUImplementations()
 {
 	if (GSDumpReplayer::IsReplayingDump())
 	{
-		Cpu = &GSDumpReplayerCpu;
+		Cpu = gt4gs::IsActive() ? &Gt4gsStreamCpu : &GSDumpReplayerCpu;
 		psxCpu = &psxInt;
 		CpuVU0 = &CpuIntVU0;
 		CpuVU1 = &CpuIntVU1;
@@ -3652,11 +3670,19 @@ void VMManager::UpdateCPUImplementations()
 		return;
 	}
 
+#ifdef GT4GS_NO_JIT
+	// No recompiler providers exist in this build.
+	Cpu = &intCpu;
+	psxCpu = &psxInt;
+	CpuVU0 = &CpuIntVU0;
+	CpuVU1 = &CpuIntVU1;
+#else
 	Cpu = CHECK_EEREC ? &recCpu : &intCpu;
 	psxCpu = CHECK_IOPREC ? &psxRec : &psxInt;
 
 	CpuVU0 = EmuConfig.Cpu.Recompiler.EnableVU0 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU0) : static_cast<BaseVUmicroCPU*>(&CpuIntVU0);
 	CpuVU1 = EmuConfig.Cpu.Recompiler.EnableVU1 ? static_cast<BaseVUmicroCPU*>(&CpuMicroVU1) : static_cast<BaseVUmicroCPU*>(&CpuIntVU1);
+#endif
 }
 
 void VMManager::Internal::ClearCPUExecutionCaches()

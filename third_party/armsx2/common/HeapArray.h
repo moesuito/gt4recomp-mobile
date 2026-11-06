@@ -94,7 +94,16 @@ public:
 
 	auto operator<=>(const this_type& rhs) const
 	{
-		return std::lexicographical_compare_three_way(m_data, m_data + SIZE, rhs.m_data, rhs.m_data + SIZE);
+		// GT4Recomp private build: NDK 26.1 ships libc++ 17, which has no
+		// std::lexicographical_compare_three_way. Same meaning, element by element.
+		for (size_t i = 0; i < SIZE; i++)
+		{
+			if (m_data[i] < rhs.m_data[i])
+				return std::strong_ordering::less;
+			if (rhs.m_data[i] < m_data[i])
+				return std::strong_ordering::greater;
+		}
+		return std::strong_ordering::equal;
 	}
 
 private:
@@ -335,9 +344,21 @@ public:
 
 	auto operator<=>(const this_type& rhs) const
 	{
-		return std::lexicographical_compare_three_way(
-			m_data, m_data + m_size,
-			rhs.m_data, rhs.m_data + rhs.m_size);
+		// GT4Recomp private build: NDK 26.1 ships libc++ 17, which has no
+		// std::lexicographical_compare_three_way. Same meaning, element by element.
+		const size_t count = std::min(m_size, rhs.m_size);
+		for (size_t i = 0; i < count; i++)
+		{
+			if (m_data[i] < rhs.m_data[i])
+				return std::strong_ordering::less;
+			if (rhs.m_data[i] < m_data[i])
+				return std::strong_ordering::greater;
+		}
+		if (m_size < rhs.m_size)
+			return std::strong_ordering::less;
+		if (rhs.m_size < m_size)
+			return std::strong_ordering::greater;
+		return std::strong_ordering::equal;
 	}
 
 private:

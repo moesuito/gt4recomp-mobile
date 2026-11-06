@@ -10,7 +10,7 @@
 #include "VMManager.h"
 #include "VUmicro.h"
 
-#if defined(ARCH_ARM64)
+#if defined(ARCH_ARM64) && !defined(GT4GS_NO_JIT)
 #include "arm64/iR5900-arm64.h"
 #endif
 
@@ -88,11 +88,15 @@ bool EECycleRate::ApplyEffective(s8 selector, const char* reason)
 	// touches nothing and says so; the reset is the fallback for anything it
 	// refuses, and is always taken on x86, which has no such pass.
 	s_last_path = TransitionPath{};
-#if defined(ARCH_ARM64)
+#if defined(ARCH_ARM64) && !defined(GT4GS_NO_JIT)
 	const bool patched = recEeRepatchCycleCharges(selector);
 #else
 	const bool patched = false;
+#if defined(ARCH_ARM64)
+	s_last_path.reason = "no-JIT build: there is no generated code to patch";
+#else
 	s_last_path.reason = "immediate patching is an AArch64 recompiler path";
+#endif
 #endif
 
 	// The IOP thread needs no hold here: everything below touches the EE recompiler's code

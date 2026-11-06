@@ -5,6 +5,12 @@
 
 #include "GS/GSState.h"
 
+#ifdef GT4GS_NO_JIT
+// GT4GS_NO_JIT (private Android build): the generators are not compiled. The names stay for the function-map members,
+// which are never asked to generate anything (there is no executable code memory); the rasterizer runs the C++ path.
+class GSSetupPrimCodeGenerator;
+class GSDrawScanlineCodeGenerator;
+#else
 #ifdef ARCH_X86
 #include "GS/Renderers/SW/GSSetupPrimCodeGenerator.all.h"
 #include "GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.h"
@@ -12,6 +18,7 @@
 #ifdef ARCH_ARM64
 #include "GS/Renderers/SW/GSSetupPrimCodeGenerator.arm64.h"
 #include "GS/Renderers/SW/GSDrawScanlineCodeGenerator.arm64.h"
+#endif
 #endif
 
 struct GSScanlineLocalData;

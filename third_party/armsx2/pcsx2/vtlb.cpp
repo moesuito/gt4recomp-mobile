@@ -1159,6 +1159,12 @@ void vtlb_AddLoadStoreInfo(uptr code_address, u32 code_size, u32 guest_pc, u32 g
 
 bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 {
+#ifdef GT4GS_NO_JIT
+	// GT4GS_NO_JIT (private Android build): no generated code exists, so there is nothing to backpatch.
+	(void)code_address;
+	(void)fault_address;
+	return false;
+#else
 	uptr fastmem_start = (uptr)vtlbdata.fastmem_base;
 	uptr fastmem_end = fastmem_start + 0xFFFFFFFFu;
 	if (fault_address < fastmem_start || fault_address > fastmem_end)
@@ -1183,6 +1189,7 @@ bool vtlb_BackpatchLoadStore(uptr code_address, uptr fault_address)
 		s_fastmem_faulting_pcs.insert(it, info.guest_pc);
 	s_fastmem_backpatch_info.erase(iter);
 	return true;
+#endif
 }
 
 bool vtlb_IsFaultingPC(u32 guest_pc)

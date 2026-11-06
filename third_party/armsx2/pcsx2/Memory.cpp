@@ -141,7 +141,13 @@ bool SysMemory::AllocateMemoryMap()
 	}
 
 	Console.WriteLn("@@MAC_MEMMAP@@ code_area_begin size=%zu", static_cast<size_t>(HostMemoryMap::CodeSize));
-#if defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
+#if defined(GT4GS_NO_JIT)
+	// GT4GS_NO_JIT (private Android build): no run-time code generation at all, so the code arena is never mapped.
+	// HasCodeMemory() stays false: the emulator initializes no recompiler provider and the GS software rasterizer
+	// takes its C++ path.
+	s_code_memory = nullptr;
+	Console.WriteLn("GT4GS_NO_JIT: no executable code memory is mapped (no JIT)");
+#elif defined(__APPLE__) && TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR
 	// [iOS] Code is allocated separately via DarwinMisc dual-mapping (W^X RW/RX aliases),
 	// not through SharedMemoryMappingArea. iOS rejects PROT_NONE MAP_JIT and MAP_FIXED+MAP_JIT,
 	// so the generic SharedMemoryMappingArea code path is unusable here.
@@ -213,7 +219,7 @@ bool SysMemory::AllocateMemoryMap()
 	}
 #endif
 
-#ifdef __linux__
+#if defined(__linux__) && !defined(GT4GS_NO_JIT)
 	// FX-15 (design credit FEX-Emu): back the hot JIT code caches with
 	// transparent hugepages to cut iTLB pressure. madvise is what the
 	// Rocknix default THP mode ("madvise") honors, and the code half is a

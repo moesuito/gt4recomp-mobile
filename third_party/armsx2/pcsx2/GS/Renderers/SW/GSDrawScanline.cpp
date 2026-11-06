@@ -14,8 +14,11 @@
 
 #include <fstream>
 
-// Comment to disable all dynamic code generation.
+// Comment to disable all dynamic code generation. GT4GS_NO_JIT (private Android build) does it from the build: no
+// executable code memory, and SetupDraw takes the C++ rasterizer branch below.
+#ifndef GT4GS_NO_JIT
 #define ENABLE_JIT_RASTERIZER
+#endif
 
 #if MULTI_ISA_COMPILE_ONCE
 // Lack of a better home

@@ -564,6 +564,11 @@ set(pcsx2PADHeaders
 	SIO/Pad/PadTypes.h
 )
 
+# GT4GS_NO_JIT (private Android build): the empty entries of the ARM64 recompilers, which are not compiled here.
+if(GT4GS_NO_JIT)
+	list(APPEND pcsx2Sources GT4GSNoJitStubs.cpp)
+endif()
+
 # GS sources
 set(pcsx2GSSourcesUnshared
 	GS/GSBlock.cpp
@@ -576,16 +581,19 @@ set(pcsx2GSSourcesUnshared
 	GS/Renderers/SW/GSRendererSW.cpp
 )
 
-if(ARCH_X86)
-	list(APPEND pcsx2GSSourcesUnshared
-		GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp
-		GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
-	)
-elseif(ARCH_ARM64)
-	list(APPEND pcsx2GSSourcesUnshared
-		GS/Renderers/SW/GSDrawScanlineCodeGenerator.arm64.cpp
-		GS/Renderers/SW/GSSetupPrimCodeGenerator.arm64.cpp
-	)
+# GT4GS_NO_JIT (private Android build): the scanline generators write machine code and are left out entirely.
+if(NOT GT4GS_NO_JIT)
+	if(ARCH_X86)
+		list(APPEND pcsx2GSSourcesUnshared
+			GS/Renderers/SW/GSDrawScanlineCodeGenerator.all.cpp
+			GS/Renderers/SW/GSSetupPrimCodeGenerator.all.cpp
+		)
+	elseif(ARCH_ARM64)
+		list(APPEND pcsx2GSSourcesUnshared
+			GS/Renderers/SW/GSDrawScanlineCodeGenerator.arm64.cpp
+			GS/Renderers/SW/GSSetupPrimCodeGenerator.arm64.cpp
+		)
+	endif()
 endif()
 
 set(pcsx2GSSources
@@ -1602,7 +1610,7 @@ set(pcsx2LTOSources
 if(ARCH_X86)
 	list(APPEND pcsx2LTOSources ${pcsx2x86Sources} ${pcsx2x86Headers})
 	target_link_libraries(PCSX2_FLAGS INTERFACE zydis)
-elseif(ARCH_ARM64)
+elseif(ARCH_ARM64 AND NOT GT4GS_NO_JIT)
 	list(APPEND pcsx2LTOSources ${pcsx2arm64Sources} ${pcsx2arm64Headers})
 	target_link_libraries(PCSX2_FLAGS INTERFACE vixl)
 endif()

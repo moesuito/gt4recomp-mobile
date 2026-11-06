@@ -4,6 +4,8 @@
 #include "GS.h"
 #include "GS/GSLzma.h"
 #include "GSDumpReplayer.h"
+
+#include "GT4GSStreamHook.h"
 #include "GameList.h"
 #include "Gif.h"
 #include "Gif_Unit.h"
@@ -64,7 +66,8 @@ static InterpVU1 gsDumpVU1;
 
 bool GSDumpReplayer::IsReplayingDump()
 {
-	return static_cast<bool>(s_dump_file);
+	// GT4Recomp private Android build: a GS stream (libgt4gs) boots and runs like a dump -- no BIOS, no disc.
+	return static_cast<bool>(s_dump_file) || gt4gs::IsActive();
 }
 
 bool GSDumpReplayer::IsRunner()
@@ -155,6 +158,12 @@ bool GSDumpReplayer::ChangeDump(const char* filename)
 
 void GSDumpReplayer::Shutdown()
 {
+	if (!s_dump_file && gt4gs::IsActive())
+	{
+		gt4gs::Shutdown();
+		return;
+	}
+
 	Console.WriteLn("(GSDumpReplayer) Shutting down.");
 
 	Cpu = nullptr;
@@ -167,6 +176,9 @@ void GSDumpReplayer::Shutdown()
 std::string GSDumpReplayer::GetDumpSerial()
 {
 	std::string ret;
+
+	if (!s_dump_file && gt4gs::IsActive())
+		return gt4gs::GetSerial();
 
 	if (!s_dump_file->GetSerial().empty())
 	{
@@ -187,6 +199,10 @@ std::string GSDumpReplayer::GetDumpSerial()
 
 u32 GSDumpReplayer::GetDumpCRC()
 {
+	// GT4Recomp private Android build: a GS stream has no dump file to ask (the fork frontend reports CRC 0).
+	if (!s_dump_file && gt4gs::IsActive())
+		return 0;
+
 	return s_dump_file->GetCRC();
 }
 
@@ -419,6 +435,12 @@ void GSDumpReplayerCpuClear(u32 addr, u32 size)
 
 void GSDumpReplayer::RenderUI()
 {
+	// GT4Recomp private Android build: a GS stream has no dump file, so there is no frame/packet line to draw. Drawing
+	// them read the null dump on the first VSync and aborted the GS thread (owner's S23, 2026-11-06). The game's own HUD
+	// is the only overlay here.
+	if (!s_dump_file)
+		return;
+
 	const float scale = ImGuiManager::GetGlobalScale();
 	const float shadow_offset = std::ceil(1.0f * scale);
 	const float margin = std::ceil(GSConfig.OsdMargin * scale);

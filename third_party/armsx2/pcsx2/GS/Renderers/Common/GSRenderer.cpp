@@ -3,6 +3,8 @@
 
 #include "ImGui/FullscreenUI.h"
 #include "ImGui/ImGuiManager.h"
+
+#include "GT4GSStreamHook.h"
 #include "GS/Renderers/Common/GSRenderer.h"
 #include "GS/Renderers/Common/GSFieldShiftPolicy.h"
 #include "GS/Renderers/Common/GSInterlaceModePolicy.h"
@@ -895,9 +897,10 @@ bool GSRenderer::BeginPresentFrame(bool frame_skip)
 	const GSDevice::PresentResult res = g_gs_device->BeginPresent(frame_skip);
 	if (res == GSDevice::PresentResult::FrameSkipped)
 	{
-		// If we're skipping a frame, we need to reset imgui's state, since
-		// we won't be calling EndPresentFrame().
-		ImGuiManager::SkipFrame();
+		// If we're skipping a frame, we need to reset imgui's state, since we won't be calling EndPresentFrame().
+		// GT4Recomp private Android build: a stream never gives ImGui a frame, so there is no state to reset.
+		if (!gt4gs::IsActive())
+			ImGuiManager::SkipFrame();
 		return false;
 	}
 	else if (res == GSDevice::PresentResult::OK)
@@ -949,6 +952,18 @@ bool GSRenderer::BeginPresentFrame(bool frame_skip)
 
 void GSRenderer::EndPresentFrame()
 {
+	// GT4Recomp private Android build: the GS-only library draws no overlay (the game's HUD is its own), so the dump
+	// overlay, the fullscreen UI and the OSD are skipped and ImGui is never given a frame. Nothing here is presented
+	// by this library.
+	if (gt4gs::IsActive())
+	{
+		// Our own HUD only (the game's CoreGS panel does not run here); never the emulator's OSD.
+		gt4gs::DrawHud();
+		g_gs_device->EndPresent();
+		ImGuiManager::NewFrame();
+		return;
+	}
+
 	if (GSDumpReplayer::IsReplayingDump())
 		GSDumpReplayer::RenderUI();
 

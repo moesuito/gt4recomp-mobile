@@ -19,7 +19,11 @@
 	spill. C linkage would carry the attribute past the mangler, at the price of
 	one flat scope for both namespaces, where EeFpuModel::RecipSqrt and
 	VuEfuModel::RecipSqrt share a name.  */
-#if defined(__has_attribute) && __has_attribute(preserve_all) && !defined(_MSC_VER)
+// GT4Recomp private build: NDK 26.1 is clang 17, whose AArch64 backend refuses the preserve_all calling
+// convention ("Unsupported calling convention") instead of falling back. The attribute exists for the recompilers,
+// which this GS-only library never runs, so the documented wide-spill form is used (GT4GS_NO_PRESERVE_ALL, defined by
+// the Android CMake entry point together with GT4GS_NO_JIT).
+#if defined(__has_attribute) && __has_attribute(preserve_all) && !defined(_MSC_VER) && !defined(GT4GS_NO_PRESERVE_ALL)
 #define EEFPU_MODEL_CALL __attribute__((preserve_all))
 #define EEFPU_MODEL_CALL_SPARES_MOST 1
 #else

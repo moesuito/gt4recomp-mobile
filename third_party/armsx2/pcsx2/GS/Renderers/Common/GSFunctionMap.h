@@ -202,6 +202,11 @@ public:
 
 	VALUE GetDefaultFunction(KEY key)
 	{
+#ifdef GT4GS_NO_JIT
+		// GT4GS_NO_JIT (private Android build): no run-time code generation, and the generators are not compiled.
+		(void)key;
+		return nullptr;
+#else
 		VALUE ret = nullptr;
 
 		auto i = m_cgmap.find(key);
@@ -245,5 +250,6 @@ public:
 		}
 
 		return ret;
+#endif
 	}
 };
