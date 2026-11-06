@@ -25,6 +25,12 @@
 #include "pcsx2/Config.h"
 #include "pcsx2/GS.h"
 #include "pcsx2/GS/GS.h"
+#include "pcsx2/GS/GSUtil.h"
+
+#if defined(__ANDROID__)
+#include <EGL/egl.h>
+#include <GLES2/gl2.h>
+#endif
 #include "pcsx2/GS/Renderers/Common/GSDevice.h"
 #include "pcsx2/GSDumpReplayer.h"
 #include "pcsx2/Host.h"
@@ -167,6 +173,46 @@ void LogTextureReplacements() {
             loading ? "on" : "off", replacements.c_str());
   }
 }
+
+#if defined(__ANDROID__)
+// TASK-186 round 7: the GL identity ARMSX2's Auto rule is decided from. A 1x1 pbuffer and a GLES2 context, destroyed
+// before the GS creates its own context on the game's window. Returns false when no context can be made, in which case
+// the caller keeps the library's default.
+static bool QueryGlIdentity(std::string *vendor, std::string *renderer, std::string *version) {
+  EGLDisplay display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+  if (display == EGL_NO_DISPLAY || eglInitialize(display, nullptr, nullptr) != EGL_TRUE) return false;
+  const EGLint config_attribs[] = {EGL_SURFACE_TYPE, EGL_PBUFFER_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+                                   EGL_RED_SIZE, 8, EGL_GREEN_SIZE, 8, EGL_BLUE_SIZE, 8, EGL_NONE};
+  EGLConfig config = nullptr;
+  EGLint config_count = 0;
+  if (eglChooseConfig(display, config_attribs, &config, 1, &config_count) != EGL_TRUE || config_count == 0) {
+    eglTerminate(display);
+    return false;
+  }
+  const EGLint surface_attribs[] = {EGL_WIDTH, 1, EGL_HEIGHT, 1, EGL_NONE};
+  EGLSurface surface = eglCreatePbufferSurface(display, config, surface_attribs);
+  const EGLint context_attribs[] = {EGL_CONTEXT_CLIENT_VERSION, 2, EGL_NONE};
+  EGLContext context = eglCreateContext(display, config, EGL_NO_CONTEXT, context_attribs);
+  bool ok = false;
+  if (surface != EGL_NO_SURFACE && context != EGL_NO_CONTEXT &&
+      eglMakeCurrent(display, surface, surface, context) == EGL_TRUE) {
+    const char *gl_vendor = reinterpret_cast<const char *>(glGetString(GL_VENDOR));
+    const char *gl_renderer = reinterpret_cast<const char *>(glGetString(GL_RENDERER));
+    const char *gl_version = reinterpret_cast<const char *>(glGetString(GL_VERSION));
+    if (gl_vendor != nullptr && gl_renderer != nullptr && gl_version != nullptr) {
+      *vendor = gl_vendor;
+      *renderer = gl_renderer;
+      *version = gl_version;
+      ok = true;
+    }
+    eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+  }
+  if (context != EGL_NO_CONTEXT) eglDestroyContext(display, context);
+  if (surface != EGL_NO_SURFACE) eglDestroySurface(display, surface);
+  eglTerminate(display);
+  return ok;
+}
+#endif
 
 void ApplyBaseSettings() {
   // The Windows launcher's own values for the PCSX2 GS (docs/GS-SETTINGS.md), then the game's session file, then the
@@ -653,7 +699,28 @@ int gt4gs_start(const Gt4gsStartInfo *info) {
       }
       break;
     case 2: renderer = GSRendererType::Null; break;  // deviceless: no GPU context and no picture, a diagnosis path
-    default: break;
+    default:
+      // Auto (TASK-186 round 7, owner 2026-11-06): ARMSX2's own per-GPU rule, not "Vulkan whenever it is built".
+      // The rule is decided from the GL identity, which the Android app normally probes before the emulator starts;
+      // here the library probes it itself with a 1x1 pbuffer, then asks GSUtil (Adreno, Mali Valhall v9/v11 and
+      // MT6897 -> Vulkan; OpenGL ES elsewhere). The decision and the GPU are logged, so game.log says why.
+      if (have_vulkan) {
+        std::string gl_vendor;
+        std::string gl_renderer;
+        std::string gl_version;
+        if (QueryGlIdentity(&gl_vendor, &gl_renderer, &gl_version)) {
+          const bool prefer_vulkan = GSUtil::AndroidAutoPrefersVulkan(gl_vendor, gl_renderer, gl_version);
+          renderer = prefer_vulkan ? GSRendererType::VK : GSRendererType::OGL;
+          LogLine("API auto: %s -> %s (%s)", gl_renderer.c_str(), prefer_vulkan ? "Vulkan" : "OpenGL ES",
+                  GSUtil::AndroidAutoRendererReason());
+        } else {
+          // No GL identity: keep the build's own default and say so; the GPU tables still apply once the GS starts.
+          LogLine("API auto: GL identity unavailable -> Vulkan (the library's default)");
+        }
+      } else {
+        renderer = GSRendererType::OGL;
+      }
+      break;
   }
   s_settings.SetIntValue("EmuCore/GS", "Renderer", static_cast<int>(renderer));
   switch (renderer) {
