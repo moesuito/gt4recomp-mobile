@@ -37,3 +37,9 @@ __pycache__/
 # Private ARMSX2 GS test build: the resources copied out of the vendored ARMSX2 tree into the APK assets are GPL data,
 # staged by android/stage-armsx2gs.cmd and never committed.
 /launcher/crates/gt4l-tauri/gen/android/app/src/main/assets/armsx2gs/
+
+# Shader compiler dependencies of the imported ARMSX2 shaderc, fetched by tools/fetch_armsx2_shader_deps.py at the
+# revisions shaderc's DEPS pins. Large third-party histories; never committed.
+/third_party/armsx2/platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/glslang/
+/third_party/armsx2/platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/spirv-headers/
+/third_party/armsx2/platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/spirv-tools/

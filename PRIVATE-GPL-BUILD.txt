@@ -1,2 +1,0 @@
-# PRIVATE, PCSX2-TAINTED, GPL. Never push, never merge into any GT4Recomp branch, never publish.
-This clone embeds ARMSX2's GS (GPL) for the owner's personal S23 test only (owner, 2026-11-05).

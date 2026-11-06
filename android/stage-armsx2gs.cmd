@@ -13,21 +13,23 @@ set "BUILD=%~2"
 if "%ABI%"=="" goto usage
 if "%BUILD%"=="" goto usage
 if "%GT4_ANDROID_NDK%"=="" set "GT4_ANDROID_NDK=%LOCALAPPDATA%\Android\Sdk\ndk\26.1.10909125"
-set "VENDOR=%~dp0..\private\armsx2-vendor"
+rem The tracked ARMSX2 import. GT4_ARMSX2_ROOT points staging at a local tree instead (optional override).
+set "ARMSX2=%GT4_ARMSX2_ROOT%"
+if "%ARMSX2%"=="" set "ARMSX2=%~dp0..\third_party\armsx2"
 set "APP=%~dp0..\launcher\crates\gt4l-tauri\gen\android\app"
 set "JNI=%APP%\src\main\jniLibs\%ABI%"
 set "ASSETS=%APP%\src\main\assets\armsx2gs\resources"
 if not exist "%JNI%" mkdir "%JNI%"
 if not exist "%ASSETS%" mkdir "%ASSETS%"
 "%GT4_ANDROID_NDK%\toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe" --strip-debug -o "%JNI%\libgt4gs.so" "%BUILD%\gt4gs\libgt4gs.so" || exit /b 1
-copy /y "%VENDOR%\bin\resources\GameIndex.yaml" "%ASSETS%\GameIndex.yaml" >nul || exit /b 1
+copy /y "%ARMSX2%\bin\resources\GameIndex.yaml" "%ASSETS%\GameIndex.yaml" >nul || exit /b 1
 rem The fonts the Performance HUD and the OSD use: the same RobotoMono-Medium the CoreGS HUD shows (owner, 2026-11-06,
 rem round 5: the ARMSX2 panel used the plain Roboto fallback because these were missing).
 if exist "%ASSETS%\fonts" rmdir /s /q "%ASSETS%\fonts"
-xcopy /e /i /y /q "%VENDOR%\bin\resources\fonts" "%ASSETS%\fonts" >nul || exit /b 1
+xcopy /e /i /y /q "%ARMSX2%\bin\resources\fonts" "%ASSETS%\fonts" >nul || exit /b 1
 rem Replace the staged tree so a removed resource cannot linger from an earlier staging.
 if exist "%ASSETS%\shaders" rmdir /s /q "%ASSETS%\shaders"
-xcopy /e /i /y /q "%VENDOR%\bin\resources\shaders" "%ASSETS%\shaders" >nul || exit /b 1
+xcopy /e /i /y /q "%ARMSX2%\bin\resources\shaders" "%ASSETS%\shaders" >nul || exit /b 1
 echo staged %ABI%: libgt4gs.so, GameIndex.yaml, shaders (opengl + common), fonts (RobotoMono)
 exit /b 0
 :usage

@@ -1,7 +1,6 @@
-# GT4Recomp private Android test build (PCSX2-tainted, GPL; never distributed). libgt4gs.so: the ARMSX2 GS inside the
-# game process, driven by the game's GS stream through a flat C ABI (gt4gs_api.h). Built by the vendored ARMSX2 CMake
-# entry point (private/armsx2-vendor/platforms/android/app/src/main/cpp/CMakeLists.txt) with
-# -DGT4GS_FRONTEND_DIR=<this folder>.
+# GT4Recomp Android build (PCSX2-tainted, GPL-3.0-or-later). libgt4gs.so: the ARMSX2 GS inside the game process,
+# driven by the game's GS stream through a flat C ABI (gt4gs_api.h). Built by the imported ARMSX2 CMake entry point
+# (third_party/armsx2/platforms/android/app/src/main/cpp/CMakeLists.txt) with -DGT4GS_FRONTEND_DIR=<this folder>.
 cmake_minimum_required(VERSION 3.22)
 
 set(GT4GS_SOURCES

@@ -1,9 +1,10 @@
-# Private test build: ARMSX2's GS inside the GT4Recomp Android app (owner's phone only)
+# ARMSX2's GS inside the GT4Recomp Android app
 
-Status: 2026-11-06 (1.3.0-rc15, round 5), **PRIVATE and PCSX2-tainted, GPL-3.0+**. Never distributed, never merged,
-never pushed. **The GS in this build has no JIT:** no run-time machine code is generated, no executable code memory is
-mapped and the ARM64 guest recompilers are not even linked (build flag `GT4GS_NO_JIT`). This clone
-(`gt4-private-armsx2gs`, branch `private/armsx2-gs-s23`) has its push URL disabled on purpose.
+Status: 2026-11-06 (1.3.0-rc15, round 5). This is the round-by-round history of the ARMSX2 GS work. The ARMSX2 tree is
+now **tracked** under `third_party/armsx2/` (GPL-3.0-or-later) instead of an untracked local copy; how it was imported
+and which patches it carries is in [ARMSX2-GS-IMPORT](ARMSX2-GS-IMPORT.md). **The GS in this build has no JIT:** no
+run-time machine code is generated, no executable code memory is mapped and the ARM64 guest recompilers are not even
+linked (build flag `GT4GS_NO_JIT`).
 
 ## What it is
 
@@ -15,34 +16,30 @@ that the ARMSX2 GS thread consumes in order.
 
 | Piece | Where |
 |---|---|
-| The GS library (`libgt4gs.so`, GPL) | `android/armsx2gs/` (our frontend) built into a vendored ARMSX2 copy |
-| The vendored ARMSX2 tree (git-ignored) | `private/armsx2-vendor/` (a copy of `C:\Antigravity\armsx2` without `.git`) |
+| The GS library (`libgt4gs.so`, GPL) | `android/armsx2gs/` (our frontend) built against the imported ARMSX2 tree |
+| The ARMSX2 tree (tracked, GPL) | `third_party/armsx2/` at upstream `1049db37fb`, plus the patches listed in [ARMSX2-GS-IMPORT](ARMSX2-GS-IMPORT.md) |
 | The game side (`GT4_RENDERER=armsx2`) | `native/gs_stream/armsx2_gs_sink.cpp` (+ the renderer value in `gs_stream_client`) |
 | Settings and Play on Android | `gt4l_core::launch::armsx2_paths` / `armsx2_config_text`, `android.rs` |
 | Build recipe | `build-android-game.cmd`, `build-hw-shaders.cmd`, `android/stage-armsx2gs.cmd` |
 
 ## How the core is built
 
-The vendored copy is only there because ARMSX2's Android CMake entry point resolves its 3rdparty folders relative to
-itself. `private/armsx2-vendor/platforms/android/app/src/main/cpp/CMakeLists.txt` replaces the emulator app's entry
-point (kept as `CMakeLists-app-emucore.txt`) with one that builds the core and our frontend:
+The ARMSX2 tree lives at `third_party/armsx2/` because its Android CMake entry point resolves its 3rdparty folders
+relative to itself. `third_party/armsx2/platforms/android/app/src/main/cpp/CMakeLists.txt` replaces the emulator app's
+entry point (kept as `CMakeLists-app-emucore.txt`) with one that builds the core and our frontend:
 
 ```
-cmake -S private/armsx2-vendor/platforms/android/app/src/main/cpp -B build/armsx2-core -G Ninja
+python tools/fetch_armsx2_shader_deps.py
+cmake -S third_party/armsx2/platforms/android/app/src/main/cpp -B build/armsx2-core -G Ninja
   -DCMAKE_TOOLCHAIN_FILE=<NDK>/build/cmake/android.toolchain.cmake
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_static -DANDROID=true
-  -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O2 -DGT4GS_NO_PRESERVE_ALL"
-  -DUSE_VULKAN=OFF -DUSE_OPENGL=ON -DENABLE_QT_UI=OFF -DENABLE_TESTS=OFF -DENABLE_GSRUNNER=OFF
+  -DCMAKE_BUILD_TYPE=Release
+  -DUSE_VULKAN=ON -DUSE_OPENGL=ON -DENABLE_QT_UI=OFF -DENABLE_TESTS=OFF -DENABLE_GSRUNNER=OFF
   -DGT4GS_FRONTEND_DIR=<clone>/android/armsx2gs
 cmake --build build/armsx2-core --target gt4gs -j 10
 ```
 
-### Back end: OpenGL ES, not Vulkan
-
-The Vulkan back end needs a runtime GLSL to SPIR-V compiler (shaderc), whose sources are the glslang and SPIRV-Tools
-submodules; the local ARMSX2 clone does not have them and this task allows no downloads. The library is therefore built
-with ARMSX2's own Android default, the OpenGL ES back end, and reports it. `gt4gs_has_vulkan()` returns 0 and the
-launcher's ARMSX2 renderer runs OpenGL ES. The Vulkan path is a rebuild away the day those sources are present.
+`GT4GS_NO_JIT` and `GT4GS_NO_PRESERVE_ALL` are defined by the entry point itself.
 
 ### Two small patches to the vendored copy (private build only)
 
@@ -248,8 +245,9 @@ full panel were checked in the emulator side by side with CoreGS (screenshots be
 `CHANGES`); its DEPS pins glslang `09c541ee5b22bbac307987b50d86ec2b4f683d75`, SPIRV-Headers
 `465055f6c9128772e20082e893d974146acf7a02` and SPIRV-Tools `e4bceacf59fdfe742047e94e41ef65a48999a0dd`. (The clone's own
 Android CI pins shaderc `v2025.4` and glslang `7a47e253...`, but it does not match the vendored Android tree, so the
-tree's own DEPS were used.) The three Khronos repositories were downloaded at those exact revisions into
-`private/armsx2-vendor/platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/` (ignored, never tracked).
+tree's own DEPS were used.) The three Khronos repositories are fetched at those exact revisions by
+`tools/fetch_armsx2_shader_deps.py` into
+`third_party/armsx2/platforms/android/app/src/main/cpp/3rdparty/shaderc/third_party/` (git-ignored, never committed).
 
 **Build and result.** `libgt4gs.so` is built with `USE_VULKAN=ON` and links the shaderc/glslang/SPIRV-Tools static
 libraries; `gt4gs_has_vulkan()` now reports 1. The emulator's Vulkan (Lavapipe, Vulkan 1.3) opens a swapchain, compiles
