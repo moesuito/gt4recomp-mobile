@@ -104,3 +104,39 @@ Vulkan 1.3) is above that floor; this build is for that phone.
 
 The Vulkan back end would run on the emulator's Lavapipe, but it needs shaderc's runtime GLSL compiler and this clone has
 no glslang/SPIRV-Tools sources (see above); that is the one thing to obtain for a Vulkan build.
+
+## Owner's S23 report (2026-11-06): black screen, and the fix
+
+The owner's log bundle (`private/owner-logs-20261106-013308`, session-1793928633) shows the whole start-up working on
+Adreno 740 until one missing file:
+
+```
+[0.1971] Opening GS...
+[0.1979] GLAD EGL Version: 1.5 ... eglCreateContext() succeeded for version 3.2
+[0.2079] GL: Qualcomm Adreno GPU detected ... Adreno profile active (EXT/PLS framebuffer fetch)
+[0.2107] GS cache: read 58 entries (127 KB) ... @@ANDROID_GL_INIT@@ stage=convert_present_merge_interlace_done
+[0.2542] GL: Failed to read fxaa.fs
+[0.2543] Failed to create GS device
+```
+
+**Cause.** The GS device creates its effects at start-up and one of them is FXAA, whose source is
+`resources/shaders/common/fxaa.fx` (the message says "fxaa.fs"); the CAS/FSR helpers in the same folder
+(`ffx_a.h`, `ffx_cas.h`, `ffx_a_fsr1.h`, `ffx_fsr1.h`) are read the same way. The staging script copied only
+`resources/shaders/opengl/*.glsl`, so `shaders/common` never reached the phone. The device failed at creation, the
+library refused, the game halted — and because the game's own message box is drawn by the renderer that just failed to
+start, the owner saw a black screen with no text.
+
+**Fix.** `android/stage-armsx2gs.cmd` now stages the whole `resources/shaders` tree (opengl, common, and the dx11 or
+vulkan sources for completeness: 33 files, 3.6 MB) and the app extracts it to the external files folder on every Play.
+
+**GLES on Adreno was not the problem.** The context was created at ES 3.2, the Adreno profile with EXT/PLS framebuffer
+fetch and depth feedback was chosen, the uber shaders compiled and the shader cache was read; the device died on the
+missing file, not on the driver. A Vulkan build would not have avoided this one (its shaders have the same staging
+rule), and it is not needed for this failure.
+
+## Settings page (owner, 2026-11-06)
+
+While the ARMSX2 GS is selected the CoreGS 2.0 rows are hidden (render scale, vsync, performance HUD, Performance Mode,
+texture loading, FXAA) and come back with CoreGS 2.0; the ARMSX2 resolution row only shows for the ARMSX2 GS. Both
+directions were checked in the emulator. The new rows are translated in pt-BR: "Resolução do ARMSX2 GS", "1,5x",
+"ARMSX2 GS (experimental, build privada)".

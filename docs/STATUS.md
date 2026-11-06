@@ -23,7 +23,14 @@ by the same GS stream the game sends to `gt4-gs.exe` on Windows, through an in-p
   files, starts the game with `GT4_RENDERER=armsx2`, the game loads `libgt4gs.so`, the ARMSX2 core boots as a GS-only VM
   (serial `SCUS-97328`, GameDB GS fixes applied), the window is attached and an EGL context is created — then the GLES
   backend refuses: the emulator's guest GL is SwiftShader **ES 3.0** and ARMSX2 needs 3.1 (`uvec2`). CoreGS 2.0 still
-  runs in the same APK. The owner's S23 (Adreno 740, ES 3.2) is above that floor; not yet run on the phone.
+  runs in the same APK.
+- **Owner's S23 test (2026-11-06): black screen, fixed.** His log shows the Adreno 740 device creating correctly (ES 3.2,
+  Adreno profile, uber shaders compiled) and dying on `GL: Failed to read fxaa.fs`: the staging copied only
+  `shaders/opengl/*.glsl`, so `shaders/common/fxaa.fx` (and the FidelityFX headers) never reached the phone. The staging
+  now ships the whole `shaders` tree (33 files) and the app extracts it on Play. GLES on Adreno was not the cause; a
+  Vulkan build would not have avoided this one. The same APK hides the CoreGS 2.0 rows while ARMSX2 is chosen and has
+  them translated in pt-BR. Rebuilt APK: sha256
+  `78fcb3e021fe00ce94ef62eaa0001aafee607bd065fc0409801e90b54f4b4c3a`.
 
 ## Android test4: the Performance report back, TASK-182 savings on, UMA phase 1 (TASK-180, 2026-11-05 evening)
 

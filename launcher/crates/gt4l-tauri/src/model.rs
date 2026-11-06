@@ -252,6 +252,11 @@ fn settings_table_versioned(
             continue;
         }
         let mut row = launcher_row(definition, settings);
+        // These launcher rows configure CoreGS 2.0 only (its render scale, its HUD, its vsync policy): with the ARMSX2
+        // GS chosen they are hidden, and they come back with CoreGS 2.0 (owner, 2026-11-06).
+        if platform == Platform::Android && matches!(definition.id, "render_scale" | "performance_hud" | "vsync") {
+            row["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 });
+        }
         // TASK-161: the full trigger range sits with the triggers on the Controls page (its analog rows), not on General.
         if definition.id == "trigger_full_range" {
             row["group"] = json!("controls");
@@ -284,6 +289,10 @@ fn settings_table_versioned(
         let mut out = gs_row(row, settings);
         if !CORE_GS_20_TABLE_ROWS.contains(&row.id.as_str()) {
             out["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::PCSX2_GS });
+        } else if platform == Platform::Android {
+            // Performance Mode, texture loading and FXAA are CoreGS 2.0's own on Android: the ARMSX2 GS reads its own
+            // ini instead, so the rows hide while it is chosen (owner, 2026-11-06).
+            out["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 });
         }
         // What Performance Mode does depends on the renderer.
         if row.id == "performance_mode" && settings.get("renderer") == gt4l_core::settings::CORE_GS_20 {
@@ -959,35 +968,60 @@ mod tests {
 mod table_tests {
     use super::*;
 
-    // TASK-180: the Android table (owner 2026-11-05): CoreGS 2.0 only, no GSdx row, no Renderer row.
+    // TASK-180: the Android table. Since the private ARMSX2 GS build (owner, 2026-11-06) the Renderer row exists there
+    // with CoreGS 2.0 and ARMSX2's GS; GSdx never. The rows only CoreGS 2.0 honours hide while the ARMSX2 GS is chosen.
     #[test]
-    fn android_has_no_renderer_or_gsdx_rows() {
+    fn android_offers_coregs20_and_armsx2_and_no_gsdx_rows() {
         let mut settings = Settings::default();
         settings.set("renderer", gt4l_core::settings::CORE_GS_20).unwrap();
         let android = settings_table_for(Platform::Android, &settings, &Controls::default(), &[], &[], false);
         assert_eq!(android["platform"], "android");
         let listed = ids(&android);
-        for absent in [
-            "renderer",
-            "graphics_card",
-            "graphics_api",
-            "monitor",
-            "resolution",
-            "fullscreen",
-            "discord_rich_presence",
-            "cas_sharpness",
-        ] {
+        for absent in ["graphics_card", "graphics_api", "monitor", "resolution", "fullscreen", "discord_rich_presence", "cas_sharpness"] {
             assert!(!listed.iter().any(|id| id == absent), "{absent} is not an Android row");
         }
+        assert!(listed.iter().any(|id| id == "renderer"), "the Renderer row is an Android row now");
+        let renderer = row(&android, "renderer");
+        let choices: Vec<&str> = renderer["values"].as_array().unwrap().iter().map(|v| v["value"].as_str().unwrap()).collect();
+        assert_eq!(choices, vec![gt4l_core::settings::CORE_GS_20, gt4l_core::settings::ARMSX2_GS]);
         for table_row in pcsx2_table_rows() {
             let kept = listed.iter().any(|id| *id == table_row.id);
             assert_eq!(kept, CORE_GS_20_TABLE_ROWS.contains(&table_row.id.as_str()), "{}", table_row.id);
         }
-        for present in ["language", "update_channel", "render_scale", "vsync", "frame_rate", "coregs_sharpening", "trigger_full_range", "performance_hud"] {
+        for present in ["language", "update_channel", "render_scale", "vsync", "frame_rate", "coregs_sharpening", "trigger_full_range", "performance_hud", "armsx2_scale"] {
             assert!(listed.iter().any(|id| id == present), "{present} is an Android row");
         }
-        for row in android["rows"].as_array().unwrap() {
-            assert_ne!(row["visible_when"]["id"], "renderer", "{} would hide without the Renderer row", row["id"]);
+    }
+
+    // Owner (2026-11-06): with the ARMSX2 GS chosen, the CoreGS 2.0 rows are hidden next to the ARMSX2 ones, and they
+    // come back with CoreGS 2.0.
+    #[test]
+    fn armsx2_hides_the_coregs20_rows_and_coregs20_brings_them_back() {
+        let mut armsx2 = Settings::default();
+        armsx2.set("renderer", gt4l_core::settings::ARMSX2_GS).unwrap();
+        let table = settings_table_for(Platform::Android, &armsx2, &Controls::default(), &[], &[], false);
+        assert_eq!(row(&table, "renderer")["current"], gt4l_core::settings::ARMSX2_GS);
+        for hidden in ["render_scale", "vsync", "performance_hud", "performance_mode", "texture_load", "fxaa"] {
+            assert_eq!(
+                row(&table, hidden)["visible_when"],
+                json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
+                "{hidden} must hide under the ARMSX2 GS"
+            );
+        }
+        assert_eq!(
+            row(&table, "armsx2_scale")["visible_when"],
+            json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS })
+        );
+        // The same rows for CoreGS 2.0: the CoreGS ones visible, the ARMSX2 resolution row hidden.
+        let mut coregs = Settings::default();
+        coregs.set("renderer", gt4l_core::settings::CORE_GS_20).unwrap();
+        let table = settings_table_for(Platform::Android, &coregs, &Controls::default(), &[], &[], false);
+        for shown in ["render_scale", "vsync", "performance_hud", "performance_mode", "texture_load", "fxaa"] {
+            assert_eq!(
+                row(&table, shown)["visible_when"],
+                json!({ "id": "renderer", "equals": gt4l_core::settings::CORE_GS_20 }),
+                "{shown} follows CoreGS 2.0"
+            );
         }
     }
 
@@ -1027,11 +1061,11 @@ mod table_tests {
 
     #[test]
     fn set_setting_refuses_rows_android_does_not_offer() {
-        for refused in ["renderer", "monitor", "resolution", "fullscreen", "graphics_card", "discord_rich_presence", "cas_sharpness", "launcher_gpu"] {
+        for refused in ["monitor", "resolution", "fullscreen", "graphics_card", "discord_rich_presence", "cas_sharpness", "launcher_gpu"] {
             assert!(!platform_accepts(Platform::Android, refused), "{refused}");
             assert!(platform_accepts(Platform::Windows, refused), "{refused}");
         }
-        for accepted in ["language", "render_scale", "performance_mode", "fxaa", "texture_load", "l2_deadzone", "lstick_deadzone"] {
+        for accepted in ["renderer", "language", "render_scale", "performance_mode", "fxaa", "texture_load", "l2_deadzone", "lstick_deadzone", "armsx2_scale"] {
             assert!(platform_accepts(Platform::Android, accepted), "{accepted}");
         }
     }

@@ -198,8 +198,7 @@ pub const SETTINGS: &[SettingDef] = &[
         page: Page::Graphics,
         group: "Renderer",
         title: "Renderer",
-        info: "CoreGS 2.0 is our own renderer and the recommended one: it is part of the game and uses much less processor. \
-               GSdx is optional: it is downloaded when you choose it.",
+        info: "CoreGS 2.0 is our own renderer and the recommended one: it is part of the game and uses much less processor. \n               ARMSX2 GS (experimental, private build) runs the ARMSX2 emulator's GS inside the game, for comparison: it is \n               experimental and may show glitches.",
         kind: Kind::Choice(RENDERER_CHOICES),
         default: PCSX2_GS,
         connected: true,
