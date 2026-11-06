@@ -1141,7 +1141,12 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             }
             // The API row (OpenGL ES by default, Vulkan experimental) and the performance HUD, which the library draws
             // itself (the game's own HUD belongs to CoreGS 2.0).
-            plan.environment.push(("GT4_ARMSX2_GS_RENDERER".into(), settings.get("armsx2_api").to_string()));
+            // Auto sends no backend at all: the library keeps its own choice (and its per-GPU rules) instead of the
+            // launcher forcing one.
+            let api = settings.get("armsx2_api");
+            if api != gt4l_core::settings::ARMSX2_API_AUTO {
+                plan.environment.push(("GT4_ARMSX2_GS_RENDERER".into(), api.to_string()));
+            }
             let hud = match settings.get("performance_hud") {
                 gt4l_core::settings::HUD_FULL => "full",
                 gt4l_core::settings::HUD_FPS_ONLY => "fps",
@@ -1149,6 +1154,15 @@ pub fn play(shared: &Shared) -> Result<(), String> {
             };
             if hud != "off" {
                 plan.environment.push(("GT4_ARMSX2_GS_HUD".into(), hud.to_string()));
+            }
+            // TASK-186: the flare row is the game-side local-zero answer, exactly the variables the PC GSdx path sends
+            // (pcsx2_environment). With the flares off, the local readback answer keeps the car icons next to the gap time
+            // and the loading picture accurate. The reset keeps a debug.env value from surviving into a later session.
+            plan.environment.retain(|(name, _)| name != "GT4_GS_HIDE_FLARES" && name != "GT4_GS_READBACK_LOCAL");
+            let flares = settings.gs_is_on("effect_flares");
+            plan.environment.push(("GT4_GS_HIDE_FLARES".into(), if flares { "0".into() } else { "1".into() }));
+            if !flares {
+                plan.environment.push(("GT4_GS_READBACK_LOCAL".into(), "1".into()));
             }
         } else {
             state::log_error(&data_dirs, "graphics: the app's external files folder is unknown; ARMSX2 GS cannot start");

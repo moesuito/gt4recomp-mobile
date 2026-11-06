@@ -492,7 +492,13 @@ pub fn armsx2_config_text(
     // The owner's armsx2-gs-extra.ini is applied after this file by the library, so his lines still override everything.
     let effects = armsx2_effect_lines(settings);
     // The file says which renderer it is for: 12 is PCSX2's OpenGL renderer, 14 its Vulkan one.
-    let renderer = if settings.get("armsx2_api") == crate::settings::ARMSX2_API_VULKAN { 14 } else { 12 };
+    // Auto is GSRendererType::Auto (-1): the library keeps its own choice instead of reading a forced backend from the
+    // launcher's default (owner, 2026-11-06, round 6: the per-GPU rules stay in charge unless the player picks one).
+    let renderer = match settings.get("armsx2_api") {
+        crate::settings::ARMSX2_API_VULKAN => 14,
+        crate::settings::ARMSX2_API_GLES => 12,
+        _ => -1,
+    };
     let mut out: Vec<String> = Vec::new();
     let mut in_gs = false;
     let mut inserted = false;

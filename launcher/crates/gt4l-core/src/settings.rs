@@ -100,11 +100,14 @@ const RENDERER_CHOICES: &[Choice] = &[
 
 /// The ARMSX2 GS resolution multipliers (private Android test build): whole and fractional scales. PCSX2 applies a
 /// fractional multiplier only with ExtendedUpscalingMultipliers on, which `armsx2_gs_config_text` writes.
-/// The API the ARMSX2 GS runs on. OpenGL ES is its Android default; Vulkan is experimental (see the help text).
+/// The API the ARMSX2 GS runs on. Auto leaves the choice to the library (Vulkan when the build carries it, OpenGL ES
+/// otherwise), which is also what keeps the per-GPU automatic rules in charge; the player may force either backend.
+pub const ARMSX2_API_AUTO: &str = "auto";
 pub const ARMSX2_API_GLES: &str = "ogl";
 pub const ARMSX2_API_VULKAN: &str = "vk";
 
 const ARMSX2_API_CHOICES: &[Choice] = &[
+    Choice { value: ARMSX2_API_AUTO, label: "Auto", selectable: true },
     Choice { value: ARMSX2_API_GLES, label: "OpenGL ES", selectable: true },
     Choice { value: ARMSX2_API_VULKAN, label: "Vulkan (experimental)", selectable: true },
 ];
@@ -259,9 +262,9 @@ pub const SETTINGS: &[SettingDef] = &[
         page: Page::Graphics,
         group: "ARMSX2 GS",
         title: "ARMSX2 GS graphics API",
-        info: "OpenGL ES is the API the ARMSX2 GS uses on Android by default: it is the one ARMSX2 keeps supported there.                Vulkan is experimental: ARMSX2 keeps it out of its Android renderer choice because of blending bugs, and                this private build may not carry it at all (the game log then says so and stays on OpenGL ES).",
+        info: "Auto lets the ARMSX2 GS choose the graphics API itself (Vulkan when this build carries it, OpenGL ES otherwise),                so the library keeps its own per-GPU rules in charge. Vulkan is experimental: ARMSX2 keeps it out of its Android                renderer choice because of blending bugs, and this build may not carry it at all (the game log then says so and                stays on OpenGL ES).",
         kind: Kind::Choice(ARMSX2_API_CHOICES),
-        default: ARMSX2_API_GLES,
+        default: ARMSX2_API_AUTO,
         connected: true,
     },
     SettingDef {

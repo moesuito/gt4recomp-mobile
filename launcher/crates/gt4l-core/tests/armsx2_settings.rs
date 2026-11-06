@@ -14,7 +14,7 @@ fn set(pairs: &[(&str, &str)]) -> Settings {
 #[test]
 fn the_defaults_are_the_ones_the_private_build_ships() {
     let settings = Settings::default();
-    assert_eq!(settings.get("armsx2_api"), "ogl", "OpenGL ES is the default API");
+    assert_eq!(settings.get("armsx2_api"), "auto", "Auto leaves the API to the library, so its per-GPU rules stay in charge");
     assert_eq!(settings.get("armsx2_textures"), "on", "the pack is loaded unless the player turns it off");
     assert_eq!(settings.get("armsx2_fxaa"), "off");
     assert_eq!(settings.get("armsx2_cas"), "off");
@@ -53,4 +53,29 @@ fn each_row_maps_to_the_armsx2_gs_setting_it_controls() {
     ]))
     .join("\n");
     assert!(forced.contains("filter = 1") && forced.contains("MaxAnisotropy = 8") && forced.contains("dithering_ps2 = 1"));
+}
+
+/// TASK-186 round 6: the two GSdx player rows go into the ARMSX2 GS file with ARMSX2's own keys, and Auto writes the
+/// library's Auto renderer instead of a backend the launcher forced.
+#[test]
+fn the_two_gsdx_rows_and_auto_renderer_reach_the_armsx2_gs_file() {
+    let paths = launch::armsx2_paths(std::path::Path::new("C:/tmp/gt4recomp-round6"));
+    let textures = std::path::Path::new("C:/tmp/gt4recomp-round6/textures");
+
+    let defaults = launch::armsx2_config_text(&Settings::default(), &paths, textures, None).unwrap();
+    assert!(defaults.contains("accurate_blending_unit = 3\n"), "Blending accuracy High by default");
+    assert!(defaults.contains("HWDownloadMode = 0\n"), "Readbacks Accurate by default");
+    assert!(defaults.contains("Renderer = -1\n"), "Auto lets the library choose");
+
+    let mut gs = Settings::default();
+    gs.set_gs("blending", "minimum").unwrap();
+    gs.set_gs("hw_download_mode", "unsynchronized").unwrap();
+    let tuned = launch::armsx2_config_text(&gs, &paths, textures, None).unwrap();
+    assert!(tuned.contains("accurate_blending_unit = 0\n"), "Minimum reaches ARMSX2");
+    assert!(tuned.contains("HWDownloadMode = 3\n"), "Unsynchronized reaches ARMSX2");
+
+    let gles = launch::armsx2_config_text(&set(&[("armsx2_api", "ogl")]), &paths, textures, None).unwrap();
+    assert!(gles.contains("Renderer = 12\n"), "OpenGL ES forced");
+    let vulkan = launch::armsx2_config_text(&set(&[("armsx2_api", "vk")]), &paths, textures, None).unwrap();
+    assert!(vulkan.contains("Renderer = 14\n"), "Vulkan forced");
 }

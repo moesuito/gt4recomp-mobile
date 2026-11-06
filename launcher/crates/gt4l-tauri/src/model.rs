@@ -28,6 +28,10 @@ const RC_ONLY_ROWS: &[&str] = &["performance_report", "check_vu_code"];
 // TASK-180 test5: `effect_flares` exists under both renderers (CoreGS 2.0 answers the table as zeros; the GSdx stream
 // client does the same); `effect_road_sheen` is CoreGS-only and handled where its row is built.
 const CORE_GS_20_TABLE_ROWS: &[&str] = &["effect_flares", "texture_load", "fxaa"];
+/// GSdx-family rows that the ARMSX2 GS also honours, with the same `armsx2-gs.ini` keys (TASK-186): Blending accuracy
+/// (`accurate_blending_unit`) and Readbacks (`HWDownloadMode`). They are player rows under GSdx (ARMSX2) on Android and
+/// under GSdx on Windows; CoreGS 2.0 has neither setting.
+const ARMSX2_GS_TABLE_ROWS: &[&str] = &["blending", "hw_download_mode"];
 /// GS table rows that exist under CoreGS 2.0 only, on every platform (TASK-180 test5: the road sheen's classifier is core 2's).
 const CORE_GS_20_ONLY_TABLE_ROWS: &[&str] = &["effect_road_sheen"];
 
@@ -312,7 +316,9 @@ fn settings_table_versioned(
         rows.push(row);
     }
     for row in pcsx2_table_rows() {
-        let gsdx_only = !CORE_GS_20_TABLE_ROWS.contains(&row.id.as_str());
+        let coregs_row = CORE_GS_20_TABLE_ROWS.contains(&row.id.as_str());
+        let armsx2_row = ARMSX2_GS_TABLE_ROWS.contains(&row.id.as_str());
+        let gsdx_only = !coregs_row && !armsx2_row;
         // The rows after CAS and the Graphics API are not GSdx's; they stay on a platform without GSdx (below).
         if gsdx_only
             && !platform.has_gsdx()
@@ -323,7 +329,15 @@ fn settings_table_versioned(
             continue;
         }
         let mut out = gs_row(row, settings);
-        if !CORE_GS_20_TABLE_ROWS.contains(&row.id.as_str()) {
+        if armsx2_row {
+            // TASK-186: Blending accuracy and Readbacks belong to whichever GSdx-family renderer the platform has.
+            let renderer = if platform == Platform::Android {
+                gt4l_core::settings::ARMSX2_GS
+            } else {
+                gt4l_core::settings::PCSX2_GS
+            };
+            out["visible_when"] = json!({ "id": "renderer", "equals": renderer });
+        } else if !coregs_row {
             out["visible_when"] = json!({ "id": "renderer", "equals": gt4l_core::settings::PCSX2_GS });
         } else if platform == Platform::Android && row.id != "effect_flares" {
             // Texture loading and FXAA are CoreGS 2.0's own on Android: the ARMSX2 GS reads its own ini instead, so the
@@ -1031,9 +1045,19 @@ mod table_tests {
         assert_eq!(choices, vec![gt4l_core::settings::CORE_GS_20, gt4l_core::settings::ARMSX2_GS]);
         for table_row in pcsx2_table_rows() {
             let kept = listed.iter().any(|id| *id == table_row.id);
+            // TASK-186: Blending accuracy and Readbacks are GSdx-family rows, and the ARMSX2 GS is the GSdx family on
+            // Android; everything else here belongs to CoreGS 2.0.
             let expected = CORE_GS_20_TABLE_ROWS.contains(&table_row.id.as_str())
-                || CORE_GS_20_ONLY_TABLE_ROWS.contains(&table_row.id.as_str());  // CoreGS 2.0 is the only renderer here
+                || CORE_GS_20_ONLY_TABLE_ROWS.contains(&table_row.id.as_str())
+                || ARMSX2_GS_TABLE_ROWS.contains(&table_row.id.as_str());
             assert_eq!(kept, expected, "{}", table_row.id);
+        }
+        for gsdx_row in ARMSX2_GS_TABLE_ROWS {
+            assert_eq!(
+                row(&android, gsdx_row)["visible_when"],
+                json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS }),
+                "{gsdx_row} is a player row under GSdx (ARMSX2)"
+            );
         }
         for present in ["language", "update_channel", "render_scale", "vsync", "frame_rate", "coregs_sharpening", "trigger_full_range", "performance_hud", "armsx2_textures"] {
             assert!(listed.iter().any(|id| id == present), "{present} is an Android row");
@@ -1110,7 +1134,7 @@ mod table_tests {
             };
             assert_eq!(row(&table, id)["visible_when"], expected, "{id} follows its own choice");
         }
-        assert_eq!(row(&table, "armsx2_api")["current"], "ogl", "OpenGL ES is the default API");
+        assert_eq!(row(&table, "armsx2_api")["current"], "auto", "Auto is the default API");
         let mut coregs = Settings::default();
         coregs.set("renderer", gt4l_core::settings::CORE_GS_20).unwrap();
         let table = settings_table_for(Platform::Android, &coregs, &Controls::default(), &[], &[], false);
@@ -1452,10 +1476,15 @@ mod table_tests {
     }
 
     #[test]
-    fn the_readback_row_is_a_gsdx_row_the_android_table_never_shows() {
-        // TASK-186: Readbacks is a player row again (table); Android has no GSdx, so the Android table filters it out.
+    fn the_readback_row_is_a_gsdx_family_row_under_gsdx_and_armsx2() {
+        // TASK-186: Readbacks is a player row again (table). On Android the GSdx family is the ARMSX2 GS, so the row is
+        // kept and follows that renderer; CoreGS 2.0 has no download mode, so it hides there.
         let android = settings_table_for(Platform::Android, &Settings::default(), &Controls::default(), &[], &[], false);
-        assert!(!ids(&android).contains(&"hw_download_mode".to_string()), "no GSdx on Android");
+        assert!(ids(&android).contains(&"hw_download_mode".to_string()), "the ARMSX2 GS is the GSdx family on Android");
+        assert_eq!(
+            row(&android, "hw_download_mode")["visible_when"],
+            json!({ "id": "renderer", "equals": gt4l_core::settings::ARMSX2_GS })
+        );
         let windows = settings_table_for(Platform::Windows, &Settings::default(), &Controls::default(), &[], &[], false);
         assert!(ids(&windows).contains(&"hw_download_mode".to_string()), "the row is on the Windows Graphics page");
         assert!(pcsx2_table_rows().iter().any(|row| row.id == "hw_download_mode"), "the row exists in the table");
