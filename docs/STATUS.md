@@ -1,3 +1,21 @@
+## Round 10: the Render scale labels are the 16:9 picture, APK 103001508 (2026-11-06)
+
+- **Labels:** every multiplier is named as the 16:9 picture (width 640 x multiplier, height floor(width x 9 / 16)):
+  1x 640x360, 1.25x 800x450, 1.5x 960x540, 1.75x 1120x630, 2x 1280x720, 2.5x 1600x900, 3x 1920x1080,
+  4x 2560x1440, 5x 3200x1800, 6x 3840x2160, 7x 4480x2520, 8x 5120x2880, 9x 5760x3240, 10x 6400x3600. GSdx (ARMSX2)
+  offers the fractional ones too; CoreGS 2.0 the whole ones. Never the 640 x 448 frame's height (1280x896).
+- **The same rule elsewhere:** the Windows and Android Play/display log lines print the 16:9 picture (they printed
+  1280x896), the Graphics help says "the 16:9 picture", and the dev mock/focus check labels follow. The CoreGS HUD shows
+  the multiplier and the output size only; ARMSX2's own OSD is the library's.
+- **Tests:** two new (every accepted multiplier on both renderers). `cargo test -p gt4l-core`: lib 317 + 158
+  integration, 0 failed; `cargo test -p gt4l-tauri --lib`: 152 passed, 4 ignored. Locale parity 1037/1037 keys.
+- **APK:** `GT4Recomp-1.3.0-rc15-mobile-arm64.apk`, versionCode **103001508**, versionName `1.3.0-rc15`,
+  **225,192,945 bytes**, sha256 `baf9f88801883d33539facee855647327e9da32094886dfd1a46e030ac412793`, owner's release key,
+  `zipalign -c -P 16` clean; symbols refreshed.
+- **Emulator (avd-b, emulator-5556):** the APK installs and opens on the 2400x1080 screen; CoreGS 2.0 shows
+  "50% · 2x · 1280x720" (the stored 83% migrated to 50%) and GSdx (ARMSX2) shows "50% · 2x · 1280x720" and
+  "63% · 2.5x · 1600x900". Screenshots in `build/evidence/r10/` (ignored).
+
 ## Round 7: the two rows are settable, Auto uses ARMSX2's table (2026-11-06)
 
 - **Cause of the phone error:** `model::platform_accepts` only allowed the CoreGS 2.0 row sets for GS table rows on

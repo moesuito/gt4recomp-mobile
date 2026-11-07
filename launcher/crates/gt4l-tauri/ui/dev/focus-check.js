@@ -255,7 +255,7 @@
     var scale = document.querySelector("input[type=range][data-setting=\"render_scale\"]");
     check("render scale is a slider on the Graphics tab", !!scale, "no control");
     var readout = scale && scale.parentNode.querySelector(".val");
-    check("the render scale readout shows the resulting resolution", !!readout && readout.textContent === "100% \u00B7 3x \u00B7 1920x1344",
+    check("the render scale readout shows the resulting resolution", !!readout && readout.textContent === "100% \u00B7 3x \u00B7 1920x1080",
       readout ? readout.textContent : "none");
     if (scale) {
       scale.focus({ preventScroll: true });
@@ -288,7 +288,7 @@
     var row = GT4.settingsModel.findRow(table, "resolution");
     check("the table holds 1280x720 after the change", !!row && row.current === "1280x720", row ? String(row.current) : "no row");
     var scaleRow = GT4.settingsModel.findRow(table, "render_scale");
-    check("the render scale readout follows the resolution", scaleRow.values.labels["100"] === "100% \u00B7 2x \u00B7 1280x896",
+    check("the render scale readout follows the resolution", scaleRow.values.labels["100"] === "100% \u00B7 2x \u00B7 1280x720",
       scaleRow.values.labels["100"]);
     var focused = document.activeElement && document.activeElement.getAttribute("data-setting");
     check("focus stays on the changed control", focused === "resolution", "focus " + focused);

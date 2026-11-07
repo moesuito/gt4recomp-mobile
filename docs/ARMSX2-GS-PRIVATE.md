@@ -88,6 +88,16 @@ the S23's 3088x1440 (k = 5). APK 103001507 (rc15/test6) shipped the previous mod
 height, where 2x was 83% at 1080p; the store migration (`render_scale_model = 3`) converts a stored percentage once by
 the multiplier it gave, so the phone keeps exactly the multiplier it runs today.
 
+## Round 10: every Render scale label is the 16:9 picture (owner, 2026-11-06)
+
+APK 103001507 showed "62% · 2x · 1280x896": the row's readout used the real 640 x 448 frame. Since commit `9099198b`
+the row uses `display::label_size` (width 640 x multiplier, height `floor(width x 9 / 16)`), so 2x is **1280x720** and
+2.5x is **1600x900**; the stored percentage and the multiplier are unchanged, and both renderers use it (GSdx (ARMSX2)
+with the fractional choices, CoreGS 2.0 with the whole ones). The launcher's "display"/"play" log lines and the Graphics
+help were moved to the same picture; the CoreGS HUD shows the multiplier and the output size only, and ARMSX2's own OSD
+is the library's. APK **103001508** (versionCode 103001508, versionName `1.3.0-rc15`, 225,192,945 bytes, sha256
+`baf9f88801883d33539facee855647327e9da32094886dfd1a46e030ac412793`) carries it.
+
 ## Texture replacement (owner, 2026-11-06)
 
 On the phone the player picks a folder with the system folder picker (SAF, a persistable read permission). The ARMSX2 GS

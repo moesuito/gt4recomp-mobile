@@ -1088,14 +1088,16 @@ pub fn play(shared: &Shared) -> Result<(), String> {
     // The log names the plan the chosen renderer really runs (the ARMSX2 GS takes the fractional scales).
     let caps = if armsx2 { gt4l_core::display::PCSX2_GS_FRACTIONAL_CAPS } else { gt4l_core::display::CORE_GS_CAPS };
     let scale = launch::session_plan_for(&settings, display.as_ref(), caps);
+    // The player reads the same 16:9 picture as the Settings row, never the taller 640 x 448 frame (owner, 2026-11-06).
+    let (picture_width, picture_height) = gt4l_core::display::label_size(scale.multiplier);
     state::log(
         &dirs,
         &format!(
-            "play: render scale {}% gives {}x ({}x{} internal) for the screen {} ({})",
+            "play: render scale {}% gives {}x ({}x{} picture) for the screen {} ({})",
             settings.get("render_scale"),
             scale.multiplier,
-            scale.internal_width,
-            scale.internal_height,
+            picture_width,
+            picture_height,
             display.as_ref().map(|target| target.output.text()).unwrap_or_else(|| "unknown, 1920x1080 assumed".to_string()),
             screen().map(|(_, hertz)| format!("{hertz} Hz")).unwrap_or_else(|| "refresh unknown".to_string()),
         ),

@@ -534,15 +534,17 @@ pub fn prepare_play(shared: &Shared, program_dir: &Path) -> Result<PlayInputs, S
     // Issue #89: on an integrated GPU the untouched default scale plays at 1x (the GPU the system check reports).
     let integrated_gpu = gt4l_platform::gpu::integrated_gpu_name_of(settings.get("graphics_card"), &cards);
     let plan = launch::session_plan(&settings, display.as_ref(), integrated_gpu.is_some());
+    // The log names the same 16:9 picture as the Settings row, never the taller 640 x 448 frame (owner, 2026-11-06).
+    let (picture_width, picture_height) = gt4l_core::display::label_size(plan.multiplier);
     state::log(
         &dirs,
         &format!(
-            "display: {} output {} -> {}x internal {}x{} (k {}, render scale {}%, aspect {:.4}{})",
+            "display: {} output {} -> {}x picture {}x{} (k {}, render scale {}%, aspect {:.4}{})",
             display.as_ref().map(|target| target.device.as_str()).unwrap_or("unknown monitor"),
             display.as_ref().map(|target| target.output.text()).unwrap_or_else(|| "unknown".into()),
             plan.multiplier,
-            plan.internal_width,
-            plan.internal_height,
+            picture_width,
+            picture_height,
             plan.base_multiplier,
             plan.render_scale,
             plan.aspect,

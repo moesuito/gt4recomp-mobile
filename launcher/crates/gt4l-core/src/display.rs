@@ -540,6 +540,19 @@ mod tests {
     }
 
     #[test]
+    fn every_label_is_the_16_9_picture_and_never_the_tall_frame() {
+        for caps in [PCSX2_GS_CAPS, PCSX2_GS_FRACTIONAL_CAPS, CORE_GS_CAPS] {
+            for multiplier in accepted_multipliers(caps) {
+                let (width, height) = label_size(multiplier);
+                assert_eq!(width, (NATIVE_FRAME_WIDTH as f64 * multiplier).round() as u32, "{multiplier}x width");
+                assert_eq!(height, (width as f64 * 9.0 / 16.0).floor() as u32, "{multiplier}x height");
+                assert_ne!(height, (width as f64 * 3.0 / 4.0).floor() as u32, "{multiplier}x shows a 4:3 height");
+                assert_ne!(height, (width as f64 * 7.0 / 10.0).floor() as u32, "{multiplier}x shows the 640x448 height");
+            }
+        }
+    }
+
+    #[test]
     fn the_row_offers_one_position_per_multiplier() {
         assert_eq!(
             render_scale_choices(Size::new(1280, 720), PCSX2_GS_CAPS),

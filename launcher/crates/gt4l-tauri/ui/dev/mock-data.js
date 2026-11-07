@@ -278,7 +278,7 @@
     var labels = {};
     for (var step = 50; step <= 200; step += 25) {
       var m = Math.min(12, Math.max(1, Math.floor((2 * k * step + 100) / 200)));
-      labels[String(step)] = step + "% \u00B7 " + m + "x \u00B7 " + (640 * m) + "x" + (448 * m);
+      labels[String(step)] = step + "% \u00B7 " + m + "x \u00B7 " + (640 * m) + "x" + Math.floor(640 * m * 9 / 16);
     }
     return labels;
   }

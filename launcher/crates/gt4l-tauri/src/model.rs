@@ -1192,6 +1192,35 @@ mod table_tests {
     }
 
     #[test]
+    fn every_render_scale_label_is_the_16_9_picture_on_both_renderers() {
+        let screen = Monitor {
+            device: "android".into(),
+            name: "screen".into(),
+            primary: true,
+            desktop: display::Size::new(3088, 1440),
+            modes: vec![display::Size::new(3088, 1440)],
+        };
+        for renderer in [gt4l_core::settings::ARMSX2_GS, gt4l_core::settings::CORE_GS_20] {
+            let mut settings = Settings::default();
+            settings.set("renderer", renderer).unwrap();
+            let table = settings_table_for(Platform::Android, &settings, &Controls::default(), &[screen.clone()], &[], false);
+            let scale = row(&table, "render_scale");
+            let values = scale["values"].as_array().unwrap();
+            assert!(values.len() >= 4, "{renderer}: {values:?}");
+            for option in values {
+                let label = option["label"].as_str().unwrap();
+                let size = label.rsplit_once(" · ").unwrap().1;
+                let (width, height) = size.split_once('x').unwrap();
+                let width: u32 = width.parse().unwrap();
+                let height: u32 = height.parse().unwrap();
+                assert_eq!(height, (width as f64 * 9.0 / 16.0).floor() as u32, "{renderer} {label}");
+                assert_ne!(height, (width as f64 * 3.0 / 4.0).floor() as u32, "{renderer} {label}: a 4:3 height");
+                assert_ne!(height, (width as f64 * 7.0 / 10.0).floor() as u32, "{renderer} {label}: the 640x448 height");
+            }
+        }
+    }
+
+    #[test]
     fn windows_keeps_the_renderer_choice_and_gsdx_rows() {
         let windows = settings_table_for(Platform::Windows, &Settings::default(), &Controls::default(), &[], &[], false);
         assert_eq!(windows["platform"], "windows");
