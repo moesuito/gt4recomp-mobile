@@ -8,7 +8,7 @@
  *          group?: "graphics"|"display" (the Display or Graphics section of the Graphics tab), control: "slider"|"toggle"|"dropdown",
  *          values, default, current, disabled?, note? (a hint shown under the label), visible_when?: {id, equals}}
  *   slider values   = {min, max, step, unit?, limit?: "max_upscale", scale?: shown value = stored / scale,
- *                      labels?: {value: readout} (TASK-080 Render scale: "100% · 4x · 2560x1792")}
+ *                      labels?: {value: readout} (TASK-080 Render scale: "100% · 4x · 2560x1440")}
  *   dropdown values = [{value, label, disabled?, note?}]
  *   toggle values   = null (current is true/false)
  *   Both are drawn by optionSelector: the value between two arrows, in an endless loop (owner, 2026-11-02).
@@ -243,7 +243,7 @@
     var spec = sliderSpec(row, ctx.table);
     // scale (TASK-080 custom aspect ratio): the stored whole number is shown divided by it, with two decimals.
     var format = function (value) {
-      // labels (TASK-080 Render scale): the table's readout for this step, e.g. "100% · 4x · 2560x1792".
+      // labels (TASK-080 Render scale): the table's readout for this step, e.g. "100% · 4x · 2560x1440".
       if (spec.labels && Object.prototype.hasOwnProperty.call(spec.labels, String(Number(value)))) {
         return spec.labels[String(Number(value))];
       }

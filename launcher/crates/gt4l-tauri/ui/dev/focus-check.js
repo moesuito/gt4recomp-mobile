@@ -263,7 +263,7 @@
       await wait(300);
       var after = document.querySelector("input[type=range][data-setting=\"render_scale\"]");
       var afterReadout = after && after.parentNode.querySelector(".val");
-      check("one step right gives 125% and 4x", !!afterReadout && afterReadout.textContent === "125% \u00B7 4x \u00B7 2560x1792",
+      check("one step right gives 125% and 4x", !!afterReadout && afterReadout.textContent === "125% \u00B7 4x \u00B7 2560x1440",
         afterReadout ? afterReadout.textContent : "none");
       var scaleFocus = document.activeElement && document.activeElement.getAttribute("data-setting");
       check("focus stays on the render scale slider", scaleFocus === "render_scale", "focus " + scaleFocus);
@@ -2424,6 +2424,319 @@
     check("no raw locale key shows on the Controls page", !/vpad\.[a-z_]+/.test(document.querySelector(".stage .content").textContent), "raw key");
   }
 
+  // TASK-199 (owner, 2026-11-06: the next row's text showed through an open info card). A Settings row's entrance
+  // animation leaves a transform on the row, which makes every row its own stacking context: the card of a row could
+  // never paint above the rows after it. The card is now drawn in one layer on the body (.popover-layer, ui.js), so an
+  // open card is the top element at its centre and at its four corners, on any page, in either language and at any
+  // window size, and it never leaves the window.
+  function cardWrongPoints(tip) {
+    var box = tip.getBoundingClientRect();
+    var points = {
+      "the centre": [box.left + box.width / 2, box.top + box.height / 2],
+      "the top left": [box.left + 3, box.top + 3],
+      "the top right": [box.right - 3, box.top + 3],
+      "the bottom left": [box.left + 3, box.bottom - 3],
+      "the bottom right": [box.right - 3, box.bottom - 3]
+    };
+    var wrong = [];
+    Object.keys(points).forEach(function (name) {
+      var hit = document.elementFromPoint(points[name][0], points[name][1]);
+      if (!hit || !tip.contains(hit)) {
+        wrong.push(name + " is " + (hit ? (hit.className || hit.tagName) : "nothing"));
+      }
+    });
+    return wrong;
+  }
+
+  function cardInWindow(tip) {
+    var box = tip.getBoundingClientRect();
+    return box.left >= 0 && box.top >= 0 && box.right <= root.innerWidth && box.bottom <= root.innerHeight;
+  }
+
+  function shownCard() {
+    return document.querySelector(".popover-layer .tip.is-shown");
+  }
+
+  // TASK-201: the row after the one whose card is open, as in the owner's phone photo (a short row, then a longer
+  // one with its own "i").
+  function nextSettingsRow(row) {
+    var rows = Array.prototype.slice.call(document.querySelectorAll(".stage .content .row[data-row]"));
+    var index = rows.indexOf(row);
+    return index >= 0 ? rows[index + 1] || null : null;
+  }
+
+  // The centre of the overlap of two boxes, or null when they do not overlap.
+  function overlapPoint(box, other) {
+    var left = Math.max(box.left, other.left);
+    var right = Math.min(box.right, other.right);
+    var top = Math.max(box.top, other.top);
+    var bottom = Math.min(box.bottom, other.bottom);
+    if (right - left < 2 || bottom - top < 2) {
+      return null;
+    }
+    return [(left + right) / 2, (top + bottom) / 2];
+  }
+
+  function hitInside(tip, point) {
+    if (!tip || !point) {
+      return false;
+    }
+    var hit = document.elementFromPoint(point[0], point[1]);
+    return !!hit && tip.contains(hit);
+  }
+
+  // Opens the card of one row's "i" with a click, and returns it. A row out of view is scrolled to the middle first; a
+  // row already in view keeps its place, so a row near the bottom edge is checked where it is.
+  async function openCard(rowId) {
+    var row = document.querySelector(".row[data-row=\"" + rowId + "\"]");
+    var info = row && row.querySelector(".info");
+    if (!info) {
+      return null;
+    }
+    var box = info.getBoundingClientRect();
+    if (box.top < 8 || box.bottom > root.innerHeight - 8) {
+      info.scrollIntoView({ block: "center" });
+      await wait(80);
+    }
+    info.click();
+    await wait(80);
+    return shownCard();
+  }
+
+  // Opens the card of an "i" that is not inside a settings row (the Controls and Wheel headers).
+  function openCardFrom(info) {
+    info.click();
+    return shownCard();
+  }
+
+  async function cardRowChecks(rowId, name) {
+    var tip = await openCard(rowId);
+    var wrong = tip ? cardWrongPoints(tip) : ["no card"];
+    check("the card of " + name + " is the top element at its centre and at its four corners", !!tip && wrong.length === 0, wrong.join("; "));
+    check("the card of " + name + " stays inside the window", !!tip && cardInWindow(tip),
+      tip ? JSON.stringify([Math.round(tip.getBoundingClientRect().left), Math.round(tip.getBoundingClientRect().top)]) : "no card");
+    var row = document.querySelector(".row[data-row=\"" + rowId + "\"]");
+    if (row) {
+      row.querySelector(".info").click();
+      await wait(60);
+    }
+  }
+
+  // Every page with an "i" (General, Games, Saves, Replays): the first card on it is in the top layer, or the page has
+  // no info icons at all.
+  async function pageCardChecks(hash, name) {
+    await setHash(hash);
+    await wait(400);
+    var infos = Array.prototype.slice.call(document.querySelectorAll(".stage .content .info"));
+    if (!infos.length) {
+      check(name + " has no info icons", true, "");
+      return;
+    }
+    var info = infos[0];
+    info.scrollIntoView({ block: "center" });
+    await wait(100);
+    var tip = openCardFrom(info);
+    var wrong = tip ? cardWrongPoints(tip) : ["no card"];
+    check("the " + name + " info card is the top element at its centre and at its four corners", !!tip && wrong.length === 0, wrong.join("; "));
+    if (tip) {
+      info.click();
+      await wait(60);
+    }
+  }
+
+  async function tipLayerChecks() {
+    await setHash("#/settings/graphics");
+    await wait(500);
+    var content = document.querySelector(".stage .content");
+
+    // The owner's own row: the card of Sun glare and light flares opens over the textures line that follows it.
+    var tip = await openCard("effect_flares");
+    check("an open info card is drawn in the layer on the body, not inside its row",
+      !!tip && !document.querySelector(".row .tip.is-shown"), tip ? tip.parentElement.className : "no card");
+    var wrong = tip ? cardWrongPoints(tip) : ["no card"];
+    check("the Sun glare and light flares card is the top element at its centre and at its four corners", !!tip && wrong.length === 0, wrong.join("; "));
+    var note = document.querySelector(".stage .content .note.textures-path");
+    var box = tip ? tip.getBoundingClientRect() : null;
+    var noteBox = note ? note.getBoundingClientRect() : null;
+    var overlaps = !!box && !!noteBox && box.left < noteBox.right && box.right > noteBox.left && box.top < noteBox.bottom && box.bottom > noteBox.top;
+    var overNote = null;
+    if (overlaps) {
+      var x = (Math.max(box.left, noteBox.left) + Math.min(box.right, noteBox.right)) / 2;
+      var y = (Math.max(box.top, noteBox.top) + Math.min(box.bottom, noteBox.bottom)) / 2;
+      overNote = document.elementFromPoint(x, y);
+    }
+    check("the textures line that follows the row draws under the card, not through it",
+      overlaps && !!overNote && tip.contains(overNote), (overNote ? (overNote.className || overNote.tagName) : "no overlap") + ", overlaps " + overlaps);
+    check("the card stays inside the window", !!tip && cardInWindow(tip), tip ? JSON.stringify([Math.round(box.left), Math.round(box.top), Math.round(box.width), Math.round(box.height)]) : "no card");
+    var flaresInfo = document.querySelector(".row[data-row=\"effect_flares\"] .info");
+
+    // A second click closes it, puts it back under its "i" and empties the layer.
+    if (flaresInfo) {
+      flaresInfo.click();
+      await wait(60);
+    }
+    check("a second click closes the card and puts it back under its i",
+      !shownCard() && !!flaresInfo && !!flaresInfo.querySelector(".tip") && flaresInfo.getAttribute("aria-expanded") === "false",
+      flaresInfo ? flaresInfo.getAttribute("aria-expanded") + " / " + shownCard() : "no i");
+
+    // A tap outside closes it.
+    await openCard("effect_flares");
+    content.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+    await wait(60);
+    check("a tap outside closes the card", !shownCard(), shownCard() ? "still open" : "");
+
+    // A tap on the card itself closes it, as it did before (the tap reached the button then).
+    var tapTip = await openCard("fxaa");
+    if (tapTip) {
+      var tapBox = tapTip.getBoundingClientRect();
+      var inCard = document.elementFromPoint(tapBox.left + tapBox.width / 2, tapBox.top + tapBox.height / 2);
+      if (inCard) {
+        inCard.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      }
+      await wait(60);
+    }
+    check("a tap on the card itself closes it", !!tapTip && !shownCard(), tapTip ? "still open" : "no card");
+
+    // One more row in the middle and the first row of the page.
+    await cardRowChecks("monitor", "Monitor");
+    await cardRowChecks("fxaa", "Anti-aliasing");
+
+    // The last row of the page, with the window scrolled to the end: the card slides up and stays inside the window.
+    content.scrollTop = content.scrollHeight;
+    await wait(120);
+    await cardRowChecks("launcher_gpu", "the last row");
+
+    // Keys and pad: the focused "i" shows its card, and a mouse press hides it again.
+    var monitorInfo = document.querySelector(".row[data-row=\"monitor\"] .info");
+    content.scrollTop = 0;
+    await wait(120);
+    if (document.activeElement && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
+    press("ArrowDown");
+    await wait(60);
+    if (document.activeElement && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
+    if (monitorInfo) {
+      monitorInfo.focus();
+      await wait(80);
+    }
+    var focusTip = shownCard();
+    var focusWrong = focusTip ? cardWrongPoints(focusTip) : ["no card"];
+    check("with a keyboard or a pad, the focused i shows its card on top", !!focusTip && focusWrong.length === 0, focusWrong.join("; "));
+    content.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+    await wait(80);
+    check("a mouse press hides the card again", !shownCard(), shownCard() ? "still open" : "");
+
+    // TASK-201 (the owner's phone photo): open the card of a short row whose next row has an "i" and a longer label,
+    // then put the keyboard focus on that "i". The card must stay the top element at the next row's "i" and label,
+    // and the focused "i" must not open a second card over it.
+    var shortRow = document.querySelector(".row[data-row=\"fxaa\"]");
+    var following = shortRow ? nextSettingsRow(shortRow) : null;
+    var nextInfo = following ? following.querySelector(".info") : null;
+    var nextLabel = following ? following.querySelector(".k > span:first-child") : null;
+    var nextCard = shortRow && shortRow.querySelector(".info") ? await openCard("fxaa") : null;
+    var nextCardBox = nextCard ? nextCard.getBoundingClientRect() : null;
+    var nextIconBox = nextInfo ? nextInfo.getBoundingClientRect() : null;
+    var nextLabelBox = nextLabel ? nextLabel.getBoundingClientRect() : null;
+    var iconPoint = nextCardBox && nextIconBox ? overlapPoint(nextIconBox, nextCardBox) : null;
+    var labelPoint = nextCardBox && nextLabelBox ? overlapPoint(nextLabelBox, nextCardBox) : null;
+    // The card opens to the right of its "i", or to the left near the window edge (a narrow window): assert only
+    // where it actually reaches the next row, and require it to reach at least one of them.
+    check("the open card reaches the row below it", !!nextCard && (!!iconPoint || !!labelPoint),
+      !nextCard ? "no card" : "i " + (iconPoint ? "covered" : "clear") + ", label " + (labelPoint ? "covered" : "clear"));
+    check("the next row's i draws under the open card, where the card reaches it", !iconPoint || hitInside(nextCard, iconPoint),
+      "i is not the card");
+    check("the next row's label draws under the open card, where the card reaches it", !labelPoint || hitInside(nextCard, labelPoint),
+      "label is not the card");
+    press("Tab");
+    await wait(60);
+    if (nextInfo) {
+      nextInfo.focus();
+      await wait(120);
+    }
+    var shownAfterFocus = document.querySelectorAll(".tip.is-shown");
+    check("with the focus on it, the next row's i does not open a second card",
+      !!nextCard && shownAfterFocus.length === 1 && shownCard() === nextCard,
+      shownAfterFocus.length + " card(s)");
+    check("the focused i of the next row shows its focus ring", !!nextInfo && nextInfo.classList.contains("ring-on"),
+      nextInfo ? nextInfo.className : "no i");
+    check("with the focus on it, the next row's i stays under the open card, where the card reaches it",
+      !iconPoint || hitInside(nextCard, iconPoint), "i is not the card");
+    check("with the focus on it, the next row's label stays under the open card, where the card reaches it",
+      !labelPoint || hitInside(nextCard, labelPoint), "label is not the card");
+    press("Escape");
+    await wait(80);
+    if (document.activeElement && document.activeElement.blur) {
+      document.activeElement.blur();
+    }
+    await wait(60);
+    check("B closes that card and does not reopen the focused i's card",
+      !shownCard() && document.querySelectorAll(".info.is-open").length === 0,
+      shownCard() ? "still open" : "reopened");
+    content.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
+    await wait(60);
+
+    // Graphics under CoreGS 2.0 too: the rows change (the Frame rate row only exists there), the layer must hold.
+    if (selectorNode("renderer")) {
+      await stepSelector("renderer", 1);
+      await wait(450);
+      var coregsTip = await openCard("frame_rate");
+      var coregsWrong = coregsTip ? cardWrongPoints(coregsTip) : ["no card"];
+      check("the CoreGS 2.0 Graphics card is the top element at its centre and at its four corners",
+        !!coregsTip && coregsWrong.length === 0, coregsWrong.join("; "));
+      var coregsInfo = document.querySelector(".row[data-row=\"frame_rate\"] .info");
+      if (coregsInfo) {
+        coregsInfo.click();
+        await wait(60);
+      }
+      await stepSelector("renderer", -1);
+      await wait(450);
+    }
+
+    // The same layer covers the header cards of the Controls and the Wheel pages.
+    await setHash("#/settings/controls");
+    await wait(400);
+    var controlsInfo = document.querySelector(".cx-head .info");
+    var controlsTip = controlsInfo ? openCardFrom(controlsInfo) : null;
+    check("the Controls page's card is the top element at its centre and at its four corners",
+      !!controlsTip && cardWrongPoints(controlsTip).length === 0, controlsTip ? cardWrongPoints(controlsTip).join("; ") : "no card");
+    if (controlsInfo) {
+      controlsInfo.click();
+      await wait(60);
+    }
+    var vpadInfo = document.querySelector(".cx-vpad .info");
+    if (vpadInfo) {
+      vpadInfo.scrollIntoView({ block: "center" });
+      await wait(120);
+    }
+    var vpadTip = vpadInfo ? openCardFrom(vpadInfo) : null;
+    check("the virtual controller section's card is the top element at its centre and at its four corners",
+      !!vpadTip && cardWrongPoints(vpadTip).length === 0, vpadTip ? cardWrongPoints(vpadTip).join("; ") : "no card");
+    if (vpadInfo) {
+      vpadInfo.click();
+      await wait(60);
+    }
+    await setHash("#/settings/wheel");
+    await wait(400);
+    var wheelInfo = document.querySelector(".cx-head .info");
+    var wheelTip = wheelInfo ? openCardFrom(wheelInfo) : null;
+    check("the Wheel page's card is the top element at its centre and at its four corners",
+      !!wheelTip && cardWrongPoints(wheelTip).length === 0, wheelTip ? cardWrongPoints(wheelTip).join("; ") : "no card");
+    if (wheelInfo) {
+      wheelInfo.click();
+      await wait(60);
+    }
+    await pageCardChecks("#/settings/general", "General");
+    await pageCardChecks("#/settings/games", "Games");
+    await pageCardChecks("#/settings/saves", "Saves");
+    await pageCardChecks("#/settings/replays", "Replays");
+    await pageCardChecks("#/settings/achievements", "Achievements");
+    await setHash("#/settings/general");
+    await wait(200);
+  }
+
   async function run() {
     await GT4.i18n.ready;
     await wait(300);
@@ -2474,6 +2787,9 @@
       // The pointer rule of the option rows, after the wheel page's own checks (a wheel setting written here clears the
       // mock's "preset applied by itself" notice those checks read).
       await optionPointerChecks();
+      // TASK-199: an open info card draws above everything, on every page (after the Wheel checks, which leave the tab
+      // list and the settings state in their own shape).
+      await tipLayerChecks();
       await gamesChecks();
       await achievementsChecks();
       await shaderWindowChecks();

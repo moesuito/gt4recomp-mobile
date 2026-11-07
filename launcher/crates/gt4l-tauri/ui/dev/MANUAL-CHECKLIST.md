@@ -88,7 +88,7 @@ Do not launch the game for these checks. Tick each item in the Tauri build befor
 ## Settings behaviour
 
 - [ ] Display section (top of Graphics): Monitor lists every connected monitor by name and desktop size, the primary one marked and chosen by default; Resolution lists that monitor's modes with its desktop mode marked; picking another monitor resets Resolution to its desktop mode.
-- [ ] Graphics: Render scale moves 50% to 200% in steps of 25% and its readout names the result ("100% · 4x · 2560x1792" on 2560x1080); it shows only with the PCSX2 GS.
+- [ ] Graphics: Render scale moves 50% to 200% in steps of 25% and its readout names the result ("100% · 4x · 2560x1440" on 2560x1080); it shows only with the PCSX2 GS.
 - [ ] Changing the scaling filter to FSR shows FSR sharpness; changing CAS mode to CAS shows CAS sharpness.
 - [ ] CoreGS 2.0 is greyed and not selectable.
 - [ ] Graphics, Advanced section: "Reset to defaults" asks, then restores the values and says so in a toast.

@@ -134,7 +134,7 @@ Settings row (`rows[]` in the table):
   visible_when?: {id, equals} }          // e.g. FSR sharpness only when scaling_filter == "fsr"
 ```
 
-- slider values: `{min, max, step, unit?, limit?: "max_upscale", scale?, labels?}`; the effective max is `min(max, table[limit])`. `labels` maps a value to its readout (TASK-080 Render scale: `{"100": "100% · 4x · 2560x1792"}`); a slider with labels gets a wider control.
+- slider values: `{min, max, step, unit?, limit?: "max_upscale", scale?, labels?}`; the effective max is `min(max, table[limit])`. `labels` maps a value to its readout (TASK-080 Render scale: `{"100": "100% · 4x · 2560x1440"}`); a slider with labels gets a wider control.
 - TASK-080 addendum rows: `monitor` (dropdown of the connected monitors, values `<GDI device>@<W>x<H>`, `primary` when none is known), `resolution` (dropdown of the chosen monitor's modes, `WxH`, `desktop` when none is known; set_setting `monitor` resets it to `desktop`), `render_scale` (slider 50..200 step 25 with `labels`; GSdx is the only renderer, so no `visible_when`). There is no `aspect_ratio`, `aspect_custom` or `upscale` row.
   With `scale` (TASK-080 Custom ratio: 100) the stored whole number is shown divided by it with two decimals
   (`233` reads "2.33:1").
@@ -289,4 +289,4 @@ zone step, the not-900 warning, Test force, "received", the whole wizard to its 
 option rows (TASK-193: a click on the row's label or value changes nothing, the left arrow steps back and the right arrow
 forward, the arrows are 32 x 32 px with a mouse and 44 x 44 px on touch, the keyboard, the pad and A keep stepping; checked on
 Graphics and on a Wheel card). `body[data-focus-check]` is
-`pass` when every check passes (427 in en-US and 434 in pt-BR at the time of writing). `&scenario=4k` only sets the state for the screenshot (Render scale at 200%; `docs/launcher/shots/graphics-4k-updated.png`); `docs/launcher/shots/display-monitor-resolution.png` is `dev/index.html?focus=content#/settings/graphics` (the Display section at the top of Graphics).
+`pass` when every check passes (459 in en-US and 466 in pt-BR at the time of writing; the phone sizes 2400x1080 and 1080x2400 are checked too). The info cards are checked over the page (TASK-199), and for the row below an open card at its "i" and label, with that "i" focused (TASK-201: the focus ring stays under the card and no second card opens over it). `&scenario=4k` only sets the state for the screenshot (Render scale at 200%; `docs/launcher/shots/graphics-4k-updated.png`); `docs/launcher/shots/display-monitor-resolution.png` is `dev/index.html?focus=content#/settings/graphics` (the Display section at the top of Graphics).

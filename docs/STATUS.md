@@ -1,3 +1,18 @@
+## Round 11: the info cards draw in a top layer (TASK-199/201, 2026-11-07)
+
+- **TASK-199 (PC `336630b4`):** an open info card is moved into `.popover-layer` on the body, placed from its "i",
+  clamped to the window and put back under the "i" when it closes. A Settings row's entrance animation leaves a
+  transform, which makes the row its own stacking context: every later row painted over the card (the owner's photo:
+  the Dithering card with the next row's label and (i) through it). `ui/js/ui.js`, `ui/css/app.css`.
+- **TASK-201 (PC `f98ddc99` + `b883076c`):** one card at a time; a tapped card stays on top while the focus moves to
+  another "i", the focused "i" keeps its ring, and a card dismissed with B, a tap outside or a tap on the card does not
+  reopen while its "i" keeps the focus. The harness asserts only the overlaps that exist in narrow windows.
+- **Checks:** focus checks at 1366x768, 2400x1080 and 1080x2400 in en-US and pt-BR: **459/459** and **466/466**, 0
+  failed; nav-test **293/293**; locale parity 1037/1037. New checks: the card is the top element at its centre and
+  corners on Graphics (GSdx and CoreGS 2.0), Controls (header and Virtual controller section), Wheel, General and
+  Achievements; Games, Saves and Replays have no info icons; the row below an open card and its focused "i" are checked.
+- **No APK:** the next APK carries it; the Android-only virtual pad section/editor and the Graphics rows are kept.
+
 ## Round 10: the Render scale labels are the 16:9 picture, APK 103001508 (2026-11-06)
 
 - **Labels:** every multiplier is named as the 16:9 picture (width 640 x multiplier, height floor(width x 9 / 16)):

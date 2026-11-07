@@ -62,8 +62,8 @@ function baseUrl() {
 
 let actualPort = PORT;
 
-async function focusChecks(browser, language) {
-  const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+async function focusChecks(browser, language, viewport) {
+  const page = await browser.newPage({ viewport: viewport || { width: 1366, height: 768 } });
   const url = `${baseUrl()}/dev/focus-check.html?lang=${language}`;
   await page.goto(url, { waitUntil: "load" });
   await page.waitForFunction(() => document.body.getAttribute("data-focus-check"), null, { timeout: 240000 });
@@ -122,12 +122,20 @@ async function main() {
     if (mode === "shots") {
       await shots(browser);
     } else {
-      for (const language of ["en-US", "pt-BR"]) {
-        const result = await focusChecks(browser, language);
-        console.log(`focus ${language}: ${result.summary} [${result.verdict}]`);
-        result.failures.forEach((line) => console.log("  " + line));
-        result.tail.forEach((line) => console.log("  | " + line));
-        failed = failed || result.verdict !== "pass";
+      // The phone's landscape and portrait sizes (owner, 2026-11-06: info cards and rows at 2400x1080 and 1080x2400).
+      const sizes = [
+        { label: "1366x768", width: 1366, height: 768 },
+        { label: "2400x1080", width: 2400, height: 1080 },
+        { label: "1080x2400", width: 1080, height: 2400 }
+      ];
+      for (const size of sizes) {
+        for (const language of ["en-US", "pt-BR"]) {
+          const result = await focusChecks(browser, language, size);
+          console.log(`focus ${language} ${size.label}: ${result.summary} [${result.verdict}]`);
+          result.failures.forEach((line) => console.log("  " + line));
+          result.tail.forEach((line) => console.log("  | " + line));
+          failed = failed || result.verdict !== "pass";
+        }
       }
       const nav = await navTest(browser);
       console.log(`nav-test: ${nav.result.passed} of ${nav.result.total} passed`);
