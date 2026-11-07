@@ -51,13 +51,15 @@ struct LayoutElement {
   std::string id;         // the contract's `id`, for the log lines (may be empty: the binds name is used then)
   ElementType type = ElementType::button;
   std::uint8_t bind = 0;  // button: a pbutton::* bit; stick: 0 left pair (LX, LY), 1 right pair (RX, RY); dpad: unused
-  // Geometry in screen fractions, exactly as the contract defines them: x and y are the centre, width and height are
-  // fractions of the screen *height* (so a square element stays square in pixels on any phone), and x/y use the
-  // screen's width for x.
+  // Geometry in screen fractions, the contract's rules: x is a fraction of the screen width and y of its height (the
+  // element's centre), height is a fraction of the screen height, and `width` is a fraction of the screen width when
+  // `wide` is true. Without a width the element is square: the activity uses its height on both axes, and `width`
+  // repeats the height only for the model's convenience.
   float x = 0.0f;
   float y = 0.0f;
   float width = 0.1f;
   float height = 0.1f;
+  bool wide = false;  // the layout JSON gave a width: the activity scales it by the view width
   float opacity = 0.6f;   // the global opacity unless the element overrides it
   float deadzone = 0.08f; // sticks
   bool visible = true;
@@ -90,6 +92,10 @@ struct ParseResult {
 // an unknown type or binds is skipped with a note, and an element's geometry is clamped into the screen. Throws
 // LayoutError when the text cannot be used.
 ParseResult parse_layout(std::string_view json);
+
+// The element's pixel width in a view: an explicit width is the contract's fraction of the view width, the same rule the
+// launcher editor draws; a square element uses its height fraction of the view height (VirtualPadView.kt mirrors this).
+float pixel_width(const LayoutElement &element, float view_width, float view_height);
 
 // The layout the game uses: the player's file when it is readable and valid, else the built-in default. `player_text`
 // is null when there is no player file at all. Every line the caller should log (which text was used and why, then the
@@ -158,8 +164,9 @@ public:
   void note(std::string line);
 
   // The drawable elements for the activity: 3 floats (element count, global opacity, haptics) then, per element,
-  // type (0 button, 1 dpad, 2 stick), bind, x, y, width, height, opacity and visible (1/0). Invisible elements are
-  // included with visible 0 so the indices stay the layout's.
+  // type (0 button, 1 dpad, 2 stick), bind, x, y, width, height, opacity, visible (1/0) and wide (1/0). Invisible
+  // elements are included with visible 0 so the indices stay the layout's; wide tells the activity to scale width by
+  // the view width (a square element uses its height).
   std::vector<float> geometry() const;
 
 private:

@@ -1,3 +1,21 @@
+## Round 12: the virtual pad's wide buttons use the view width (2026-11-07)
+
+- **Cause:** `docs/CONTROLS.md` defines an element's `width` as a fraction of the screen width and the launcher editor
+  draws it that way; the native parser documented it as a height fraction and `VirtualPadView.kt` multiplied `width` by
+  the view height, so L1/R1/L2/R2 and Select/Start came out narrower than the editor preview on a 19.3:9 phone.
+- **Fix:** the parser keeps an explicit-width flag (`LayoutElement.wide`) and `Pad::geometry` carries it (9 floats per
+  element); `VirtualPadView` uses `width` x the view width for a wide element and keeps the height base for a square
+  one, so sticks, the D-pad and the face buttons are unchanged. `pixel_width()` in the native library states the
+  contract; the editor was already correct.
+- **Defaults unchanged:** the default layout's 0.16/0.11 are the documented width fractions that put the pairs side by
+  side (at 3088x1440 L2..L1 and R1..R2 have a 0.01 gap). They were not tuned to the old height base, so no value
+  changed; the next APK shows the wide buttons as the editor preview, slightly wider than today's game on the phone.
+- **Tests:** `virtual_pad_fixture` (compiled on its own) passes all groups, with the width contract at 2400x1080 and
+  3088x1440 (a wide element's pixel width = width x view width; a square's = height x view height), the default L1/lstick
+  rectangles and the geometry's wide flag. The focus checks add the same default rectangles on the editor model:
+  **463/463 en-US** and **470/470 pt-BR** at 1366x768, 2400x1080 and 1080x2400, nav-test **293/293**. No Rust change; no
+  APK.
+
 ## Round 11: the info cards draw in a top layer (TASK-199/201, 2026-11-07)
 
 - **TASK-199 (PC `336630b4`):** an open info card is moved into `.popover-layer` on the body, placed from its "i",

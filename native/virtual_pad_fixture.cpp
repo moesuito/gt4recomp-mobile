@@ -65,6 +65,7 @@ void check_shipped_default() {
   require(stick.type == ElementType::stick && stick.bind == 0, "lstick is the left stick");
   require(std::fabs(stick.x - 0.13f) < 1e-6 && std::fabs(stick.y - 0.70f) < 1e-6, "lstick position");
   require(std::fabs(stick.height - 0.32f) < 1e-6 && std::fabs(stick.width - 0.32f) < 1e-6, "a stick without width is square");
+  require(!stick.wide, "a stick without width is square, not wide");
 
   const LayoutElement &dpad = element(layout, 1);
   require(dpad.type == ElementType::dpad && dpad.id == "dpad", "dpad is the d-pad");
@@ -76,9 +77,61 @@ void check_shipped_default() {
   const LayoutElement &l1 = element(layout, 6);
   require(l1.type == ElementType::button && l1.bind == pbutton::l1, "l1 binds L1");
   require(std::fabs(l1.width - 0.16f) < 1e-6 && std::fabs(l1.height - 0.12f) < 1e-6, "l1 is a wide, short button");
+  require(l1.wide, "l1 carries an explicit width");
   require(std::fabs(element(layout, 7).width - 0.16f) < 1e-6, "r1 keeps its width");
   require(element(layout, 10).id == "select" && element(layout, 11).id == "start", "select and start");
   std::fprintf(stderr, "PASS: the shipped default layout (12 elements, contract order and binds)\n");
+}
+
+// The contract's width rule (fixed 2026-11-07): an explicit `width` is a fraction of the view width, so a wide button's
+// pixel width is width x view width; a square element (no width) keeps its height on both axes. The editor model
+// (ui/js/virtual-pad-model.js) draws the same rectangle, and its focus checks assert the same numbers as this fixture.
+void check_width_contract() {
+  const ParseResult parsed = parse_layout(read_file(kDefaultLayout));
+  const Layout &layout = parsed.layout;
+  const LayoutElement &l1 = element(layout, 6);
+  const LayoutElement &stick = element(layout, 0);
+  require(l1.wide && !stick.wide, "only an element with a width is wide");
+  // 2400x1080 and 3088x1440 (the S23's 19.3:9 panel).
+  const struct {
+    float width;
+    float height;
+  } views[] = {{2400.0f, 1080.0f}, {3088.0f, 1440.0f}};
+  for (const auto &view : views) {
+    require(std::fabs(pixel_width(l1, view.width, view.height) - 0.16f * view.width) < 0.01f,
+            "L1's pixel width is width x the view width");
+    require(std::fabs(pixel_width(l1, view.width, view.height) - 0.16f * view.height) > 1.0f,
+            "a wide element does not use the height base");
+    require(std::fabs(pixel_width(stick, view.width, view.height) - 0.32f * view.height) < 0.01f,
+            "a square element's pixel width is its height x the view height");
+    require(std::fabs(pixel_width(stick, view.width, view.height) - 0.32f * view.width) > 1.0f,
+            "a square element does not use the width base");
+    const float ratio = view.width / view.height;
+    const float l1_half = l1.wide ? l1.width / 2.0f : l1.height / (2.0f * ratio);
+    require(std::fabs((l1.x - l1_half) - 0.22f) < 1e-6f && std::fabs((l1.x + l1_half) - 0.38f) < 1e-6f,
+            "L1's x span is the width fraction");
+    require(std::fabs((l1.y - l1.height / 2.0f) - 0.04f) < 1e-6f &&
+                std::fabs((l1.y + l1.height / 2.0f) - 0.16f) < 1e-6f,
+            "L1's y span is the height fraction");
+    const float stick_half = stick.wide ? stick.width / 2.0f : stick.height / (2.0f * ratio);
+    require(std::fabs((stick.x - stick_half) - (0.13f - 0.16f / ratio)) < 1e-6f &&
+                std::fabs((stick.x + stick_half) - (0.13f + 0.16f / ratio)) < 1e-6f,
+            "the stick's x span is its height over the screen shape");
+  }
+  // The defaults' 0.16 and 0.11 are the documented width fractions, so the pairs sit side by side at both shapes and
+  // the shipped layout needs no change (the old height-based game was what made them narrower).
+  const auto gap = [](const LayoutElement &left, const LayoutElement &right) {
+    return (right.x - right.width / 2.0f) - (left.x + left.width / 2.0f);
+  };
+  const LayoutElement &l2 = element(layout, 8);
+  const LayoutElement &r1 = element(layout, 7);
+  const LayoutElement &r2 = element(layout, 9);
+  const LayoutElement &select = element(layout, 10);
+  const LayoutElement &start = element(layout, 11);
+  require(gap(l2, l1) > 0.0f && gap(l2, l1) < 0.02f, "L2 and L1 sit side by side");
+  require(gap(r1, r2) > 0.0f && gap(r1, r2) < 0.02f, "R1 and R2 sit side by side");
+  require(gap(select, start) > 0.0f && gap(select, start) < 0.02f, "Select and Start sit side by side");
+  std::fprintf(stderr, "PASS: the width contract (wide = view width, square = height, the default side by side)\n");
 }
 
 void check_rejected_files() {
@@ -136,6 +189,7 @@ void check_skipped_elements_and_clamping() {
   require(stick.type == ElementType::stick && stick.bind == 1, "right_stick is the right pair");
   require(std::fabs(stick.deadzone - 0.2f) < 1e-6, "the element deadzone overrides the global one");
   require(std::fabs(stick.width - 0.2f) < 1e-6, "a stick keeps its own width");
+  require(stick.wide, "a stick with an explicit width is wide");
 
   const auto note_says = [&parsed](const std::string &needle) {
     for (const std::string &note : parsed.notes) {
@@ -309,15 +363,17 @@ void check_live_pad() {
   require(saw("lstick centred"), "the stick's recentre is logged");
   require(pad.take_log().empty(), "taking the log empties it");
 
-  // The geometry the activity draws: 3 header floats then 8 per element.
+  // The geometry the activity draws: 3 header floats then 9 per element.
   const std::vector<float> geometry = pad.geometry();
-  require_equal(static_cast<long long>(geometry.size()), 3 + 12 * 8, "geometry size");
+  require_equal(static_cast<long long>(geometry.size()), 3 + 12 * 9, "geometry size");
   require_equal(static_cast<long long>(geometry[0]), 12, "geometry element count");
   require(std::fabs(geometry[1] - 0.6f) < 1e-6, "geometry global opacity");
   require(geometry[2] == 1.0f, "geometry haptics flag");
   require_equal(static_cast<long long>(geometry[3]), 2, "element 0 is a stick");
-  require_equal(static_cast<long long>(geometry[3 + 8 * 2]), 0, "element 2 is a button");
-  require_equal(static_cast<long long>(geometry[3 + 8 * 2 + 1]), pbutton::cross, "element 2 binds Cross");
+  require_equal(static_cast<long long>(geometry[3 + 9 * 2]), 0, "element 2 is a button");
+  require_equal(static_cast<long long>(geometry[3 + 9 * 2 + 1]), pbutton::cross, "element 2 binds Cross");
+  require_equal(static_cast<long long>(geometry[3 + 9 * 6 + 8]), 1, "element 6 (L1) is wide");
+  require_equal(static_cast<long long>(geometry[3 + 9 * 0 + 8]), 0, "element 0 (the stick) is square");
   std::fprintf(stderr, "PASS: the live pad (press, stick, d-pad, hide, invisible, log lines, geometry)\n");
 }
 
@@ -326,6 +382,7 @@ void check_live_pad() {
 int main() {
   try {
     check_shipped_default();
+    check_width_contract();
     check_rejected_files();
     check_skipped_elements_and_clamping();
     check_load_fallback();

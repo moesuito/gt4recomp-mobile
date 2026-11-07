@@ -2231,6 +2231,32 @@
     await stepSelector("virtual_pad", 1);
     check("the mode loops back to Auto", (await vpadView()).mode === "auto", (await vpadView()).mode);
 
+    // The width contract (fixed 2026-11-07): an explicit width is a fraction of the screen width, so the editor draws
+    // the wide buttons wider than tall; a square element keeps its height on both axes. These are the same rectangles
+    // as native/virtual_pad_fixture.cpp (check_width_contract), at the two sizes the fixture uses.
+    var contractLayout = (await vpadView()).layout;
+    var contractL1 = GT4.virtualPadModel.find(contractLayout, "l1");
+    var contractStick = GT4.virtualPadModel.find(contractLayout, "lstick");
+    var wide2400 = GT4.virtualPadModel.rect(contractL1, 2400 / 1080);
+    var wide3088 = GT4.virtualPadModel.rect(contractL1, 3088 / 1440);
+    check("the editor draws L1's width as the screen-width fraction",
+      Math.abs(wide2400.x0 - 0.22) < 1e-9 && Math.abs(wide2400.x1 - 0.38) < 1e-9 &&
+      Math.abs(wide3088.x0 - 0.22) < 1e-9 && Math.abs(wide3088.x1 - 0.38) < 1e-9,
+      JSON.stringify(wide2400) + " / " + JSON.stringify(wide3088));
+    check("the editor draws L1's height as the screen-height fraction",
+      Math.abs(wide2400.y0 - 0.04) < 1e-9 && Math.abs(wide2400.y1 - 0.16) < 1e-9, JSON.stringify(wide2400));
+    var stick2400 = GT4.virtualPadModel.rect(contractStick, 2400 / 1080);
+    var stick3088 = GT4.virtualPadModel.rect(contractStick, 3088 / 1440);
+    check("the editor draws a square element's width from its height and the screen shape",
+      Math.abs((stick2400.x1 - stick2400.x0) - 0.32 / (2400 / 1080)) < 1e-9 &&
+      Math.abs((stick3088.x1 - stick3088.x0) - 0.32 / (3088 / 1440)) < 1e-9,
+      (stick2400.x1 - stick2400.x0) + " / " + (stick3088.x1 - stick3088.x0));
+    check("the editor's default rectangles match the native fixture",
+      Math.abs(stick2400.x0 - 0.058) < 1e-9 && Math.abs(stick2400.x1 - 0.202) < 1e-9 &&
+      Math.abs(stick3088.x0 - (0.13 - 0.16 / (3088 / 1440))) < 1e-9 &&
+      Math.abs(stick3088.x1 - (0.13 + 0.16 / (3088 / 1440))) < 1e-9,
+      JSON.stringify(stick2400) + " / " + JSON.stringify(stick3088));
+
     // The global opacity writes the layout file at once.
     var opacity = section.querySelector("input[data-setting=\"virtual_pad_opacity\"]");
     opacity.focus({ preventScroll: true });

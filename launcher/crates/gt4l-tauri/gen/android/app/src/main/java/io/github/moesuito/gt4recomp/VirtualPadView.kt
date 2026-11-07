@@ -46,6 +46,9 @@ class VirtualPadView(context: Context) : View(context) {
         val height: Float,
         val opacity: Float,
         val visible: Boolean,
+        // The layout gave a width: it is a fraction of the view width (the contract); without it the element is square
+        // and its pixel width is its height.
+        val wide: Boolean,
     )
 
     // One finger and the element it holds. A stick remembers where the thumb landed, so a touch off the stick's centre
@@ -79,7 +82,7 @@ class VirtualPadView(context: Context) : View(context) {
 
     private fun dp(value: Float) = value * resources.displayMetrics.density
 
-    /** Takes the layout the native side parsed: 3 header floats then 8 per element (nativeVirtualPadGeometry). */
+    /** Takes the layout the native side parsed: 3 header floats then 9 per element (nativeVirtualPadGeometry). */
     fun setLayout(geometry: FloatArray, binds: Array<String>) {
         elements.clear()
         if (geometry.size < 3) {
@@ -89,8 +92,8 @@ class VirtualPadView(context: Context) : View(context) {
         haptics = geometry[2] != 0.0f
         val count = geometry[0].toInt()
         for (index in 0 until count) {
-            val base = 3 + index * 8
-            if (base + 7 >= geometry.size) break
+            val base = 3 + index * 9
+            if (base + 8 >= geometry.size) break
             elements.add(
                 Element(
                     index = index,
@@ -102,6 +105,7 @@ class VirtualPadView(context: Context) : View(context) {
                     height = geometry[base + 5],
                     opacity = geometry[base + 6],
                     visible = geometry[base + 7] != 0.0f,
+                    wide = geometry[base + 8] != 0.0f,
                 )
             )
         }
@@ -162,6 +166,13 @@ class VirtualPadView(context: Context) : View(context) {
         invalidate()
     }
 
+    /**
+     * Half the element's width in pixels: an explicit width is the contract's fraction of the view width, the same rule
+     * the launcher editor draws; a square element keeps its height fraction of the view height, as it always did.
+     */
+    private fun halfWidthPx(element: Element): Float =
+        if (element.wide) element.width * width / 2f else element.height * height / 2f
+
     /** The topmost visible element under (x, y) that no other finger holds, or null. */
     private fun elementAt(x: Float, y: Float): Element? {
         if (width == 0 || height == 0) return null
@@ -171,7 +182,7 @@ class VirtualPadView(context: Context) : View(context) {
             if (!element.visible || element.index in taken) continue
             val centreX = element.x * width
             val centreY = element.y * height
-            val halfWidth = element.width * height / 2f
+            val halfWidth = halfWidthPx(element)
             val halfHeight = element.height * height / 2f
             if (element.type == TYPE_STICK) {
                 val radius = min(halfWidth, halfHeight)
@@ -190,7 +201,7 @@ class VirtualPadView(context: Context) : View(context) {
     private fun offsetsFor(element: Element, held: Held, x: Float, y: Float): Pair<Float, Float> {
         if (element.type == TYPE_BUTTON) return 0.0f to 0.0f
         val halfHeight = element.height * height / 2f
-        val halfWidth = element.width * height / 2f
+        val halfWidth = halfWidthPx(element)
         if (element.type == TYPE_DPAD) {
             val dx = if (halfWidth > 0f) ((x - element.x * width) / halfWidth) else 0.0f
             val dy = if (halfHeight > 0f) ((y - element.y * height) / halfHeight) else 0.0f
@@ -218,7 +229,7 @@ class VirtualPadView(context: Context) : View(context) {
             val centreX = element.x * width
             val centreY = element.y * height
             val halfHeight = element.height * height / 2f
-            val halfWidth = element.width * height / 2f
+            val halfWidth = halfWidthPx(element)
             val held = pointerHeld.values.firstOrNull { it.element == element.index }
             val pressed = held != null
             val alpha = (element.opacity.coerceIn(0.05f, 1f) * 255f).toInt()

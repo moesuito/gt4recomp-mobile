@@ -436,11 +436,16 @@ std::optional<LayoutElement> parse_element(const Json &entry, std::size_t index,
     element.height = clamped(static_cast<float>(size->number), 0.01f, 1.0f);
     if (static_cast<float>(size->number) > 1.0f)
       notes.push_back("layout " + label + ": size " + format_float(static_cast<float>(size->number)) + " clamped to 1");
-    // `width` uses the same base as `size` (a fraction of the screen height), so an element without it is square.
+    // The contract's `width` is a fraction of the screen width; without it the element is square and the activity uses
+    // its height on both axes. `wide` carries that distinction to the activity (TASK-185, fixed 2026-11-07: it used
+    // the height as the base for an explicit width too, which made the wide buttons narrower than the editor's).
+    const Json *width_field = member(entry, "width");
+    element.wide = width_field != nullptr;
     const double width = number_or(entry, "width", size->number, where.c_str());
     if (!std::isfinite(width) || width <= 0.0) {
       notes.push_back("layout " + label + ": width must be above zero, the element is square");
       element.width = element.height;
+      element.wide = false;
     } else {
       element.width = clamped(static_cast<float>(width), 0.01f, 1.0f);
     }
@@ -722,10 +727,14 @@ void Pad::note(std::string line) {
   log_.push_back(std::move(line));
 }
 
+float pixel_width(const LayoutElement &element, float view_width, float view_height) {
+  return element.wide ? element.width * view_width : element.height * view_height;
+}
+
 std::vector<float> Pad::geometry() const {
   const std::lock_guard<std::mutex> lock(mutex_);
   std::vector<float> out;
-  out.reserve(3 + layout_.elements.size() * 8);
+  out.reserve(3 + layout_.elements.size() * 9);
   out.push_back(static_cast<float>(layout_.elements.size()));
   out.push_back(layout_.opacity);
   out.push_back(layout_.haptics ? 1.0f : 0.0f);
@@ -738,6 +747,7 @@ std::vector<float> Pad::geometry() const {
     out.push_back(element.height);
     out.push_back(element.opacity);
     out.push_back(element.visible ? 1.0f : 0.0f);
+    out.push_back(element.wide ? 1.0f : 0.0f);
   }
   return out;
 }

@@ -290,7 +290,8 @@ Coordinates are fractions of the screen in landscape, so one layout fits any pho
 - `size` is the element's height as a fraction of the screen height, 0..1;
 - `width` is optional: the element's width as a fraction of the screen **width**. Without it the element is square
   (`size` on both axes). The default layout's L1/L2 and R1/R2 are 0.16 of the screen width, which is what puts the pair
-  side by side.
+  side by side. The editor and the game use the same rule: a wide element's pixel width is `width` x the view width, a
+  square element's is its height; the layout parser carries the explicit-width flag to the activity (fix 2026-11-07).
 
 ```json
 {
